@@ -1,6 +1,6 @@
 # api/models.py
-
 from django.db import models
+from .managers import UserManager
 from django.db import transaction  # For safe, atomic transactions
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -18,15 +18,13 @@ class BaseModel(models.Model):
         abstract = True  # This tells Django it's not a real table.
 
 
-# --- User & Profile Models (Best of File 1, 2, & 3) ---
-
-
 class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
+    objects = UserManager()
 
     # --- ADD THESE TWO FIELDS TO FIX THE ERROR ---
     groups = models.ManyToManyField(
