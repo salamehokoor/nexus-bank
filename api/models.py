@@ -145,7 +145,7 @@ class CardManager(models.Manager):
         """
         # Generate a 16-digit card number
         # Using first 16 chars of a UUID is a simple, non-sequential way
-        card_number = str(uuid.uuid4().hex[:16].upper())
+        card_number = str(uuid.uuid4().int)[:16]
 
         # Generate a 3-digit CVV
         cvv = str(uuid.uuid4().int)[:3]
