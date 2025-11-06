@@ -3,6 +3,7 @@ from .managers import UserManager
 from django.contrib.auth.models import AbstractUser, Group, Permission
 from django.core.validators import MinValueValidator, MaxValueValidator
 from decimal import Decimal
+from django.db.models import Q
 
 
 class BaseModel(models.Model):
@@ -65,26 +66,6 @@ class UserAddress(BaseModel):
         return f"{self.street}, {self.city}"
 
 
-class BankAccountType(BaseModel):
-
-    class AccountTypes(models.TextChoices):
-        SAVINGS = 'Savings', 'Savings Account'
-        SALARY = 'Salary', 'Salary Account'
-        BASIC = 'Basic', 'Basic Account'
-
-    type = models.CharField(
-        max_length=10,
-        choices=AccountTypes.choices,
-        default=AccountTypes.BASIC,
-    )
-
-    maximum_withdrawal_amount = models.DecimalField(
-        max_digits=12, decimal_places=2, default=Decimal('10000.00'))
-
-    def __str__(self):
-        return self.type
-
-
 class AccountManager(models.Manager):
     """
     A custom manager to safely handle account number generation.
@@ -108,11 +89,6 @@ class AccountManager(models.Manager):
         return account
 
 
-from decimal import Decimal
-from django.db import models
-from django.db.models import Q
-
-
 class Account(BaseModel):
 
     class AccountTypes(models.TextChoices):
@@ -120,38 +96,42 @@ class Account(BaseModel):
         SALARY = 'Salary', 'Salary Account'
         BASIC = 'Basic', 'Basic Account'
 
-    # Account type directly on the model
+    # Account type as string (not integer)
     type = models.CharField(
         max_length=10,
         choices=AccountTypes.choices,
         default=AccountTypes.BASIC,
     )
 
-    # One user can have many accounts
     user = models.ForeignKey(User,
                              on_delete=models.CASCADE,
                              related_name='accounts')
-
     account_number = models.CharField(max_length=12,
                                       unique=True,
                                       editable=False)
-
     balance = models.DecimalField(max_digits=12,
                                   decimal_places=2,
                                   default=Decimal('0.00'))
-
     is_active = models.BooleanField(default=True)
-
-    objects = AccountManager()  # custom manager
 
     class Meta:
         constraints = [
             models.CheckConstraint(check=Q(balance__gte=0),
-                                   name="account_balance_nonnegative"),
+                                   name='account_balance_nonnegative'),
         ]
 
+    LIMITS = {
+        AccountTypes.SAVINGS: Decimal('10000.00'),
+        AccountTypes.SALARY: Decimal('10000.00'),
+        AccountTypes.BASIC: Decimal('10000.00'),
+    }
+
+    @property
+    def maximum_withdrawal_amount(self) -> Decimal:
+        return self.LIMITS[self.type]
+
     def __str__(self):
-        return f"{self.user.email} - {self.account_number} ({self.type})"
+        return f"{self.user.email} - {self.account_number} ({self.get_type_display()})"
 
 
 class TransactionManager(models.Manager):
