@@ -12,6 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 class CardSerializer(serializers.ModelSerializer):
     last4 = serializers.SerializerMethodField()
+    expiration_date = serializers.SerializerMethodField()  # <- override
 
     class Meta:
         model = Card
@@ -19,6 +20,13 @@ class CardSerializer(serializers.ModelSerializer):
 
     def get_last4(self, obj):
         return obj.card_number[-4:]
+
+    def get_expiration_date(self, obj):
+        value = obj.expiration_date
+        # if it's datetime, convert to date; then ISO string
+        if hasattr(value, "date"):
+            value = value.date()
+        return value.isoformat()
 
 
 class AccountSerializer(serializers.ModelSerializer):
