@@ -1,9 +1,11 @@
 # api/urls.py
 
 from django.urls import path
-from . import views
+from .views import AccountsListCreateView, AccountCardsListCreateView
 
 urlpatterns = [
-    # Your API URLs will go here
-    # Example: path('hello/', views.hello_world),
+    path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
+    path("accounts/<uuid:account_id>/cards/",
+         AccountCardsListCreateView.as_view(),
+         name="account-cards"),
 ]
