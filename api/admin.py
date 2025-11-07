@@ -42,5 +42,5 @@ admin.site.register(User)
 admin.site.register(UserProfile)
 admin.site.register(UserAddress)
 admin.site.register(Account)
-admin.site.register(Card, CardAdmin)  # <-- Register Card with its custom admin
+admin.site.register(Card)  # <-- Register Card with its custom admin
 admin.site.register(Transaction)
