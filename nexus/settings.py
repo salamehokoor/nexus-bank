@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes', 'django.contrib.sessions',
     'django.contrib.messages', 'django.contrib.staticfiles', 'rest_framework',
     'api', 'django_extensions', 'rest_framework.authtoken', 'djoser',
-    'corsheaders'
+    'corsheaders', 'drf_spectacular'
 ]
 
 MIDDLEWARE = [
@@ -128,7 +128,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.TokenAuthentication',
-    ]
+    ],
+    'DEFAULT_SCHEMA_CLASS':
+    'drf_spectacular.openapi.AutoSchema',
 }
 
 SIMPLE_JWT = {

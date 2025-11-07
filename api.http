@@ -12,7 +12,7 @@ Content-Type: application/json
 
 ###
 POST http://127.0.0.1:8000/auth/token/logout/ HTTP/1.1
-Authorization: Token a7dac5cc54a6d2fbce3548a38d37c9ed8523fedc
+Authorization: Token 177d769f69dc726f88e783f6d15bbc49084af3ff
 ###
 POST http://127.0.0.1:8000/auth/jwt/create/ HTTP/1.1
 Content-Type: application/json
@@ -23,4 +23,12 @@ Content-Type: application/json
 }
 ###
 GET http://127.0.0.1:8000/auth/users/me/ HTTP/1.1
-Authorization:JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYyNTIxMjE4LCJpYXQiOjE3NjI1MjA5MTgsImp0aSI6ImM5ZDYyYjE2N2IwNTQxNjhhMzhmYzY3YmQ4MzliMTdmIiwidXNlcl9pZCI6IjEifQ.3GdKLkuqLFL2EYDkig248L2uuawFTqJLA4lvGudBpWU
+Authorization:JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYyNTIxMjY2LCJpYXQiOjE3NjI1MjA5NjYsImp0aSI6ImFkNDZjMDFjOGQ2ODRhZDFiMmRiN2JiMWQ3ZjE4ZTM0IiwidXNlcl9pZCI6IjEifQ.qMRBhR0g-yNbNKSor-mzqRBD7ieRWQXj8Zn6uIYpqB4
+
+###
+POST http://127.0.0.1:8000/auth/jwt/refresh/ HTTP/1.1
+Content-Type: application/json
+
+{
+    "refresh":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6MTc2MjYwNzQ0NCwiaWF0IjoxNzYyNTIxMDQ0LCJqdGkiOiJmYzM5N2RlMjNmYWQ0N2U4ODUzNzUzZTk3ZGIwZTQ3OCIsInVzZXJfaWQiOiIxIn0.MKK5QcnvzTj7fV4QZhnhfRE55jhQ7N0GPtqSA9_dgYs"
+}
