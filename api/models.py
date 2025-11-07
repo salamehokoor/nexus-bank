@@ -1,6 +1,5 @@
 from django.db import models, transaction
-from .managers import UserManager
-from django.contrib.auth.models import AbstractUser, Group, Permission
+from django.contrib.auth.models import AbstractUser, Permission, BaseUserManager
 from decimal import Decimal
 from django.db.models import Q, F
 import uuid
@@ -15,36 +14,44 @@ class BaseModel(models.Model):
         abstract = True
 
 
+# ---------- Manager ----------
+class UserManager(BaseUserManager):
+
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Email must be set")
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("is_active", True)
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+        return self.create_user(email, password, **extra_fields)
+
+
+# ---------- User ----------
 class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
+
     objects = UserManager()
-
-    # Avoid reverse name clashes on permissions
-    user_permissions = models.ManyToManyField(
-        Permission,
-        verbose_name='user permissions',
-        blank=True,
-        help_text='Specific permissions for this user.',
-        related_name="api_user_permissions",
-    )
-
-    # --- FIX: Added 'groups' to prevent clash ---
-    groups = models.ManyToManyField(
-        Group,
-        verbose_name='groups',
-        blank=True,
-        help_text='The groups this user belongs to.',
-        related_name="api_user_groups",
-    )
 
     def __str__(self):
         return self.email
 
 
+# ---------- Profile ----------
 class UserProfile(BaseModel):
     user = models.OneToOneField(User,
                                 on_delete=models.CASCADE,
@@ -57,6 +64,7 @@ class UserProfile(BaseModel):
         return f"{self.first_name} {self.last_name}"
 
 
+# ---------- Address ----------
 class UserAddress(BaseModel):
     user = models.ForeignKey(User,
                              on_delete=models.CASCADE,
