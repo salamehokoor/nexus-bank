@@ -1,37 +1,41 @@
-"""
-URL configuration for nexus project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 # nexus/urls.py
-
 from django.contrib import admin
-from django.urls import path, include, re_path
-from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from django.http import HttpResponse
+from django.urls import path, include
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView,
+)
 
 urlpatterns = [
+    # Admin
     path('admin/', admin.site.urls),
-    re_path(r'^auth/', include('djoser.urls')),
-    re_path(r'^auth/', include('djoser.urls.authtoken')),
-    re_path(r'^auth/', include('djoser.urls.jwt')),
+
+    # Allauth (Google login)
+    path('social/', include('allauth.urls')),
+
+    # REST Auth
+    path('api/auth/', include('dj_rest_auth.urls')),
+    path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
+
+    # Djoser / JWT routes
+    path('auth/', include('djoser.urls')),
+    path('auth/', include('djoser.urls.authtoken')),
+    path('auth/', include('djoser.urls.jwt')),
+
+    # ✅ API schema and docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    # Optional UI:
     path('api/schema/swagger-ui/',
          SpectacularSwaggerView.as_view(url_name='schema'),
          name='swagger-ui'),
     path('api/schema/redoc/',
          SpectacularRedocView.as_view(url_name='schema'),
          name='redoc'),
-    path('', include('api.urls')),
+
+    # Your app endpoints
+    path('api/', include('api.urls')),
+
+    # Root
+    path('', lambda request: HttpResponse("Welcome to Nexus Bank!")),
 ]
