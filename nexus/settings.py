@@ -58,14 +58,6 @@ MIDDLEWARE = [
 ]
 
 # --------------------
-# CORS
-# --------------------
-CORS_ALLOWED_ORIGINS = [
-    # Add your React app URL here, e.g.:
-    "http://localhost:3000",
-]
-
-# --------------------
 # URLS / TEMPLATES
 # --------------------
 ROOT_URLCONF = 'nexus.urls'
@@ -182,7 +174,5 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_LOGIN_METHODS = {"email"}  # only email login
+ACCOUNT_SIGNUP_FIELDS = ["email", "password1", "password2*"]  # required fields
