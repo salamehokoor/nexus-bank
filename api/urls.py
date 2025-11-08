@@ -2,10 +2,12 @@
 
 from django.urls import path
 from .views import AccountsListCreateView, AccountCardsListCreateView
+from .views import GoogleLogin
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
     path("accounts/<uuid:account_id>/cards/",
          AccountCardsListCreateView.as_view(),
          name="account-cards"),
+    path('auth/google/', GoogleLogin.as_view(), name='google_login'),
 ]

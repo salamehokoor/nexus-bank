@@ -3,6 +3,12 @@ from rest_framework import generics, permissions
 from django.db.models import Count
 from .models import Account, Card
 from .serializers import AccountSerializer, CardSerializer
+from dj_rest_auth.registration.views import SocialLoginView
+from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+
+
+class GoogleLogin(SocialLoginView):
+    adapter_class = GoogleOAuth2Adapter
 
 
 class AccountsListCreateView(generics.ListCreateAPIView):
