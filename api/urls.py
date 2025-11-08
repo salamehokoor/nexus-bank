@@ -1,11 +1,17 @@
 # api/urls.py
 
 from django.urls import path
-from .views import AccountsListCreateView, AccountCardsListCreateView
+from .views import AccountsListCreateView, AccountCardsListCreateView, InternalTransferListCreateView, ExternalTransferListCreateView
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
-    path("accounts/<uuid:account_id>/cards/",
+    path("accounts/<str:account_number>/cards/",
          AccountCardsListCreateView.as_view(),
          name="account-cards"),
+    path("transfers/internal/",
+         InternalTransferListCreateView.as_view(),
+         name="transfer-internal"),
+    path("transfers/external/",
+         ExternalTransferListCreateView.as_view(),
+         name="transfer-external"),
 ]

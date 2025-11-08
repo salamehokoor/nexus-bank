@@ -84,18 +84,15 @@ class Account(BaseModel):
         BASIC = 'Basic', 'Basic Account'
 
     def generate_account_number():
+        # ensures 12-digit string
         return str(uuid.uuid4().int)[:12]
 
-    id = models.UUIDField(default=uuid.uuid4,
-                          unique=True,
-                          editable=False,
-                          db_index=True,
-                          primary_key=True)
     account_number = models.CharField(
         max_length=12,
         unique=True,
         editable=False,
         default=generate_account_number,
+        primary_key=True,
     )
 
     type = models.CharField(
@@ -203,12 +200,11 @@ class Transaction(BaseModel):
         ]
 
     def save(self, *args, **kwargs):
-        # If this is an update of an existing row, don't move money again.
         if self.pk:
             return super().save(*args, **kwargs)
 
         with transaction.atomic():
-            # lock both accounts in a stable order to avoid deadlocks
+            # These hold the PK ('account_number') because Account.account_number is primary_key=True
             sa = Account.objects.select_for_update().get(
                 pk=self.sender_account_id)
             ra = Account.objects.select_for_update().get(
@@ -221,15 +217,13 @@ class Transaction(BaseModel):
             if sa.balance < self.amount:
                 raise ValueError("Insufficient funds.")
 
-            # atomic debit/credit
-            Account.objects.filter(pk=sa.pk).update(balance=F('balance') -
+            Account.objects.filter(pk=sa.pk).update(balance=F("balance") -
                                                     self.amount)
-            Account.objects.filter(pk=ra.pk).update(balance=F('balance') +
+            Account.objects.filter(pk=ra.pk).update(balance=F("balance") +
                                                     self.amount)
 
-            # get the new balances to store snapshots
-            sa.refresh_from_db(fields=['balance'])
-            ra.refresh_from_db(fields=['balance'])
+            sa.refresh_from_db(fields=["balance"])
+            ra.refresh_from_db(fields=["balance"])
 
             self.sender_balance_after = sa.balance
             self.receiver_balance_after = ra.balance
