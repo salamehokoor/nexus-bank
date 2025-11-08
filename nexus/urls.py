@@ -32,10 +32,5 @@ urlpatterns = [
     path('api/schema/redoc/',
          SpectacularRedocView.as_view(url_name='schema'),
          name='redoc'),
-
-    # Your app endpoints
-    path('api/', include('api.urls')),
-
-    # Root
-    path('', lambda request: HttpResponse("Welcome to Nexus Bank!")),
+    path('', include('api.urls')),
 ]

@@ -173,6 +173,9 @@ SOCIALACCOUNT_PROVIDERS = {
         }
     }
 }
-
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # <- still needed
 ACCOUNT_LOGIN_METHODS = {"email"}  # only email login
 ACCOUNT_SIGNUP_FIELDS = ["email", "password1", "password2*"]  # required fields
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you want confirm-by-email
+REST_AUTH = {"USE_JWT": True}
