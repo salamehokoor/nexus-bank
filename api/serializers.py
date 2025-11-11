@@ -2,6 +2,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from .models import Account, Card, User, Transaction
 from django.conf import settings
+from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -92,8 +93,7 @@ class AccountSerializer(serializers.ModelSerializer):
         if pref == obj.currency:
             return {"currency": obj.currency, "amount": obj.balance}
 
-        # Use conversion helpers from utils_fx
-        from .utils_fx import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
+        # Use conversion helpers from
         amount = obj.balance
 
         if obj.currency == "JOD" and pref == "USD":

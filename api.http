@@ -2,11 +2,11 @@ GET http://127.0.0.1:8000/auth/users/me/ HTTP/1.1
 Authorization: Token a7dac5cc54a6d2fbce3548a38d37c9ed8523fedc
 ###
 
-POST http://127.0.0.1:8000/auth/token/login/ HTTP/1.1
+POST https://api.nexus-banking.com/auth/token/login/ HTTP/1.1
 Content-Type: application/json
 
 {
-    "email":"salamehokoor@gmail.com",
+    "email":"anas@gmail.com",
     "password":"test"
 }
 
@@ -14,16 +14,16 @@ Content-Type: application/json
 POST http://127.0.0.1:8000/auth/token/logout/ HTTP/1.1
 Authorization: Token 177d769f69dc726f88e783f6d15bbc49084af3ff
 ###
-POST http://127.0.0.1:8000/auth/jwt/create/ HTTP/1.1
+POST https://api.nexus-banking.com/auth/jwt/create/ HTTP/1.1
 Content-Type: application/json
 
 {
-    "email":"salamehokoor@gmail.com",
+    "email":"anas@gmail.com",
     "password":"test"
 }
 ###
-GET http://127.0.0.1:8000/auth/users/me/ HTTP/1.1
-Authorization:JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYyNTIxMjY2LCJpYXQiOjE3NjI1MjA5NjYsImp0aSI6ImFkNDZjMDFjOGQ2ODRhZDFiMmRiN2JiMWQ3ZjE4ZTM0IiwidXNlcl9pZCI6IjEifQ.qMRBhR0g-yNbNKSor-mzqRBD7ieRWQXj8Zn6uIYpqB4
+GET https://api.nexus-banking.com/auth/users/me/ HTTP/1.1
+Authorization:JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYyODkxNTQxLCJpYXQiOjE3NjI4OTEyNDEsImp0aSI6IjRmZjQwODExYzhlOTQ1NDU5MjI3YTM4ZDllMWEyZWE3IiwidXNlcl9pZCI6IjIifQ.zNioGKdN6QJnYPZpXY-3rstXpwE9UrKVgOD3zLU0uyU
 
 ###
 POST http://127.0.0.1:8000/auth/jwt/refresh/ HTTP/1.1
