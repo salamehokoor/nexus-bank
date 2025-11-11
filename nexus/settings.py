@@ -13,7 +13,7 @@ SECRET_KEY = os.environ.get(
     "django-insecure-x@hsf*xa)67w93ndtsx$oc*&mh5xs^f)@@g5&3*1dyl2=q@g+@")
 
 # Keep False in production
-DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+DEBUG = True
 
 # --------------------
 # HOSTS / PROXY / SECURITY
@@ -44,13 +44,13 @@ SESSION_COOKIE_SAMESITE = "Lax"
 
 # CORS/CSRF (frontend is on Netlify custom subdomain)
 CORS_ALLOWED_ORIGINS = [
-    "https://app.nexus-banking.com",
+    "https://nexus-banking.com",
     # Optionally keep your temporary Netlify URL while testing:
     # "https://<your-site>.netlify.app",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://app.nexus-banking.com",
+    "https://nexus-banking.com",
     "https://api.nexus-banking.com",  # allow admin/forms on your own domain
 ]
 
@@ -215,12 +215,14 @@ SPECTACULAR_SETTINGS = {
 # dj-allauth / dj-rest-auth
 # --------------------
 # Email-only login flow (modern, less error-prone than older keys)
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
-ACCOUNT_AUTHENTICATION_METHOD = "email"
+# dj-allauth (new style, email-only login)
+ACCOUNT_LOGIN_METHODS = {"email"}  # replaces ACCOUNT_AUTHENTICATION_METHOD
+ACCOUNT_SIGNUP_FIELDS = [
+    "email*", "password1*", "password2*"
+]  # replaces ACCOUNT_EMAIL_REQUIRED / USERNAME_REQUIRED
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # keep if your User has no username
 ACCOUNT_UNIQUE_EMAIL = True
-ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you require confirmation
+ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory"
 
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
