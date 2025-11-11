@@ -7,7 +7,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = [
     '13.49.41.118', 'localhost', '127.0.0.1', '13.61.99.79',
-    "https://api.nexus-banking.com"
+    "api.nexus-banking.com"
 ]
 CSRF_TRUSTED_ORIGINS = ["http://13.49.41.118:8000"]
 
