@@ -3,7 +3,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-x@hsf*xa)67w93ndtsx$oc*&mh5xs^f)@@g5&3*1dyl2=q@g+@'
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = [
     '13.49.41.118', 'localhost', '127.0.0.1', '13.61.99.79',
@@ -61,6 +61,16 @@ MIDDLEWARE = [
     'allauth.account.middleware.AccountMiddleware',
 ]
 
+CORS_ALLOWED_ORIGINS = [
+    "https://nexus-banking.com",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://app.nexus-banking.com",
+]
+
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
 # --------------------
 # URLS / TEMPLATES
 # --------------------
@@ -183,6 +193,3 @@ ACCOUNT_SIGNUP_FIELDS = ["email", "password1", "password2*"]  # required fields
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you want confirm-by-email
 REST_AUTH = {"USE_JWT": True}
-CORS_ALLOWED_ORIGINS = [
-    "https://nexus-banking.com",
-]
