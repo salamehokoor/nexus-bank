@@ -1,0 +1,16 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}Nexus Admin{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="icon" type="image/png" href="{% static 'api/images/logo.png' %}">
+{% endblock %}
+
+{% block branding %}
+  <a href="{% url 'admin:index' %}" style="display:flex;align-items:center;gap:.5rem;text-decoration:none;">
+    <img src="{% static 'api/images/logo.png' %}" alt="Nexus" style="height:36px;">
+    <span style="font-weight:600;color:var(--body-fg);">Nexus Admin</span>
+  </a>
+{% endblock %}

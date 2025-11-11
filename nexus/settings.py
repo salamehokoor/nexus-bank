@@ -25,34 +25,34 @@ ALLOWED_HOSTS = [
 ]
 
 # Nginx passes original scheme/host to Django
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-USE_X_FORWARDED_HOST = True
+#SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+#USE_X_FORWARDED_HOST = True
 
 # HTTPS hardening (safe defaults)
-SECURE_SSL_REDIRECT = True
-SECURE_HSTS_SECONDS = 31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+#SECURE_SSL_REDIRECT = True
+#SECURE_HSTS_SECONDS = 31536000
+#SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+#SECURE_HSTS_PRELOAD = True
+#SECURE_CONTENT_TYPE_NOSNIFF = True
+#SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # Cookies over HTTPS
-CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SAMESITE = "Lax"
+#CSRF_COOKIE_SECURE = True
+#SESSION_COOKIE_SECURE = True
+#CSRF_COOKIE_SAMESITE = "Lax"
+#SESSION_COOKIE_SAMESITE = "Lax"
 
 # CORS/CSRF (frontend is on Netlify custom subdomain)
-CORS_ALLOWED_ORIGINS = [
-    "https://nexus-banking.com",
-    # Optionally keep your temporary Netlify URL while testing:
-    # "https://<your-site>.netlify.app",
-]
+#CORS_ALLOWED_ORIGINS = [
+#    "https://nexus-banking.com",
+# Optionally keep your temporary Netlify URL while testing:
+# "https://<your-site>.netlify.app",
+#]
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://nexus-banking.com",
-    "https://api.nexus-banking.com",  # allow admin/forms on your own domain
-]
+#CSRF_TRUSTED_ORIGINS = [
+#    "https://nexus-banking.com",
+#    "https://api.nexus-banking.com",  # allow admin/forms on your own domain
+#]
 
 # --------------------
 # INSTALLED APPS
@@ -176,7 +176,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-
+TEMPLATES[0]["DIRS"] = [BASE_DIR / "templates"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --------------------
@@ -212,6 +212,11 @@ SPECTACULAR_SETTINGS = {
     "SERVERS": [{
         "url": "https://api.nexus-banking.com"
     }],
+    "logo": {
+        "url": "/static/api/images/logo.png",
+        "altText": "Nexus",
+        "href": "/"
+    },
 }
 
 # --------------------

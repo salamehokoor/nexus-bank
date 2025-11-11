@@ -1,0 +1,15 @@
+{% extends "rest_framework/base.html" %}
+{% load static %}
+
+{% block title %}Nexus API{% endblock %}
+
+{% block head %}
+    {{ block.super }}
+
+    <!-- Your global favicon -->
+    <link rel="icon" type="image/png" href="{% static 'api/images/logo.png' %}">
+{% endblock %}
+
+
+
+
