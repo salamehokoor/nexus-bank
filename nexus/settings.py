@@ -273,7 +273,7 @@ REST_AUTH = {"USE_JWT": True}
 # }
 
 DJOSER = {
-    'LOGIN_FIELD': 'id',
+    'LOGIN_FIELD': 'email',
     'USER_CREATE_PASSWORD_RETYPE': True,
     'USERNAME_CHANGED_EMAIL_CONFIRMATION': True,
     'PASSWORD_CHANGED_EMAIL_CONFIRMATION': True,
@@ -285,7 +285,7 @@ DJOSER = {
     'SEND_ACTIVATION_EMAIL': True,
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
-        'user': 'api.serializers.UserCreateSerializer',
+        'user': 'api.serializers.UserSerializer',
         'user_delete': 'djoser.serializers.UserDeleteSerializer'
     },
 }
