@@ -295,5 +295,5 @@ EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "nexusbank49@gmail.com"
-EMAIL_HOST_PASSWORD = "anas2004@"  # Use an app password, not your Gmail password
+EMAIL_HOST_PASSWORD = "olvhyvasmjcxxfat"  # Use an app password, not your Gmail password
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
