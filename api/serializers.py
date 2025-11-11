@@ -1,6 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from .models import Account, Card, User, Transaction
+from django.conf import settings
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -38,8 +39,8 @@ class AccountSerializer(serializers.ModelSerializer):
                                                          decimal_places=2,
                                                          read_only=True)
     card_count = serializers.SerializerMethodField()
-
     owner = UserSerializer(source="user", read_only=True)
+    display_balance = serializers.SerializerMethodField()
 
     class Meta:
         model = Account
@@ -48,16 +49,26 @@ class AccountSerializer(serializers.ModelSerializer):
             "owner",
             "mask",
             "type",
+            "currency",  # new field
             "balance",
+            "display_balance",  # new field
             "is_active",
             "maximum_withdrawal_amount",
             "card_count",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ("id", "account_number", "owner", "mask",
-                            "is_active", "maximum_withdrawal_amount",
-                            "card_count", "created_at", "updated_at")
+        read_only_fields = (
+            "id",
+            "account_number",
+            "owner",
+            "mask",
+            "is_active",
+            "maximum_withdrawal_amount",
+            "card_count",
+            "created_at",
+            "updated_at",
+        )
 
     def get_mask(self, obj):
         n = len(obj.account_number)
@@ -65,6 +76,36 @@ class AccountSerializer(serializers.ModelSerializer):
 
     def get_card_count(self, obj):
         return obj.cards.count()
+
+    def get_display_balance(self, obj):
+        """Show balance converted to the user's preferred currency (if different)."""
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+
+        if not user or not user.is_authenticated or not hasattr(
+                user, "profile"):
+            # no preference → show native account currency
+            return {"currency": obj.currency, "amount": obj.balance}
+
+        pref = user.profile.preferred_currency
+        # If same currency → show as-is
+        if pref == obj.currency:
+            return {"currency": obj.currency, "amount": obj.balance}
+
+        # Use conversion helpers from utils_fx
+        from .utils_fx import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
+        amount = obj.balance
+
+        if obj.currency == "JOD" and pref == "USD":
+            amount = jod_to_usd(obj.balance)
+        elif obj.currency == "USD" and pref == "JOD":
+            amount = usd_to_jod(obj.balance)
+        elif obj.currency == "JOD" and pref == "EUR":
+            amount = jod_to_eur(obj.balance)
+        elif obj.currency == "EUR" and pref == "JOD":
+            amount = eur_to_jod(obj.balance)
+
+        return {"currency": pref, "amount": amount}
 
 
 # ---------- read shape (reuse for responses) ----------

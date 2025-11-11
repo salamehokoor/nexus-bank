@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.db.models import Q, F
 import uuid
 from datetime import datetime
+from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 
 
 class BaseModel(models.Model):
@@ -82,6 +83,14 @@ class Account(BaseModel):
         SAVINGS = 'Savings', 'Savings Account'
         SALARY = 'Salary', 'Salary Account'
         BASIC = 'Basic', 'Basic Account'
+        USD = 'USD', 'USD Account'
+        EUR = 'EUR', 'EUR Account'
+
+    CURRENCY_CHOICES = [
+        ('JOD', 'JOD'),
+        ('USD', 'USD'),
+        ('EUR', 'EUR'),
+    ]
 
     def generate_account_number():
         # ensures 12-digit string
@@ -108,6 +117,10 @@ class Account(BaseModel):
                                   decimal_places=2,
                                   default=Decimal('0.00'))
     is_active = models.BooleanField(default=True)
+
+    currency = models.CharField(max_length=3,
+                                choices=CURRENCY_CHOICES,
+                                default='JOD')
 
     class Meta:
         constraints = [
@@ -204,7 +217,6 @@ class Transaction(BaseModel):
             return super().save(*args, **kwargs)
 
         with transaction.atomic():
-            # These hold the PK ('account_number') because Account.account_number is primary_key=True
             sa = Account.objects.select_for_update().get(
                 pk=self.sender_account_id)
             ra = Account.objects.select_for_update().get(
@@ -217,11 +229,28 @@ class Transaction(BaseModel):
             if sa.balance < self.amount:
                 raise ValueError("Insufficient funds.")
 
+            # --- Handle currency conversion ---
+            credited = self.amount
+            if sa.currency != ra.currency:
+                pair = (sa.currency, ra.currency)
+                if pair == ('JOD', 'USD'):
+                    credited = jod_to_usd(self.amount)
+                elif pair == ('USD', 'JOD'):
+                    credited = usd_to_jod(self.amount)
+                elif pair == ('JOD', 'EUR'):
+                    credited = jod_to_eur(self.amount)
+                elif pair == ('EUR', 'JOD'):
+                    credited = eur_to_jod(self.amount)
+                else:
+                    raise ValueError(f"Unsupported currency pair: {pair}")
+
+            # --- Update balances atomically ---
             Account.objects.filter(pk=sa.pk).update(balance=F("balance") -
                                                     self.amount)
             Account.objects.filter(pk=ra.pk).update(balance=F("balance") +
-                                                    self.amount)
+                                                    credited)
 
+            # --- Refresh updated balances ---
             sa.refresh_from_db(fields=["balance"])
             ra.refresh_from_db(fields=["balance"])
 
