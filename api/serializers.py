@@ -3,6 +3,14 @@ from rest_framework import serializers
 from .models import Account, Card, User, Transaction
 from django.conf import settings
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
+from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
+
+
+class UserCreateSerializer(BaseUserCreateSerializer):
+
+    class Meta(BaseUserCreateSerializer.Meta):
+        model = User
+        fields = ("id", "email", "password", "first_name")
 
 
 class UserSerializer(serializers.ModelSerializer):
