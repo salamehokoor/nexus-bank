@@ -180,3 +180,6 @@ ACCOUNT_SIGNUP_FIELDS = ["email", "password1", "password2*"]  # required fields
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you want confirm-by-email
 REST_AUTH = {"USE_JWT": True}
+CORS_ALLOWED_ORIGINS = [
+    "https://nexus-banking.com",
+]
