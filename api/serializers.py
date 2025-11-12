@@ -1,6 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
-from .models import Account, Card, User, Transaction
+from .models import Account, Card, User, Transaction, BillPayment
 from django.conf import settings
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
@@ -220,3 +220,20 @@ class ExternalTransferSerializer(serializers.Serializer):
             receiver_account=validated["receiver_account"],
             amount=validated["amount"],
         )
+
+
+class BillPaymentSerializer(serializers.ModelSerializer):
+    biller_name = serializers.ReadOnlyField(source="biller.name")
+
+    class Meta:
+        model = BillPayment
+        fields = [
+            "id", "biller", "biller_name", "account", "reference_number",
+            "amount", "currency", "status", "created_at"
+        ]
+        read_only_fields = ["amount", "currency", "status", "created_at"]
+
+    def create(self, validated_data):
+        payment = BillPayment.objects.create(**validated_data)
+        payment.pay()
+        return payment

@@ -261,3 +261,89 @@ class Transaction(BaseModel):
 
     def __str__(self):
         return f"{self.amount} from {self.sender_account} to {self.receiver_account}"
+
+
+class Biller(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    category = models.CharField(max_length=50,
+                                choices=[('Electricity', 'Electricity'),
+                                         ('Water', 'Water'),
+                                         ('Internet', 'Internet'),
+                                         ('Telecom', 'Telecom'),
+                                         ('Other', 'Other')])
+    description = models.TextField(blank=True, null=True)
+    fixed_amount = models.DecimalField(max_digits=12,
+                                       decimal_places=2,
+                                       default=Decimal('0.00'))
+    # money for this biller is collected into this account
+    system_account = models.OneToOneField(Account,
+                                          on_delete=models.CASCADE,
+                                          related_name='biller_system_account',
+                                          null=True,
+                                          blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class BillPayment(models.Model):
+    user = models.ForeignKey(User,
+                             on_delete=models.CASCADE,
+                             related_name="bill_payments")
+    account = models.ForeignKey(Account,
+                                on_delete=models.CASCADE,
+                                related_name="bill_payments")
+    biller = models.ForeignKey(Biller,
+                               on_delete=models.CASCADE,
+                               related_name="payments")
+    reference_number = models.CharField(max_length=30, unique=True)
+    amount = models.DecimalField(max_digits=12,
+                                 decimal_places=2)  # auto-set from biller
+    currency = models.CharField(max_length=3,
+                                choices=[('JOD', 'JOD'), ('USD', 'USD'),
+                                         ('EUR', 'EUR')])
+    status = models.CharField(max_length=20,
+                              choices=[('PENDING', 'Pending'),
+                                       ('PAID', 'Paid'), ('FAILED', 'Failed')],
+                              default='PENDING')
+
+    def save(self, *args, **kwargs):
+        # on create, enforce fixed amount and account currency
+        if not self.pk:
+            self.amount = self.biller.fixed_amount
+            self.currency = self.account.currency
+        super().save(*args, **kwargs)
+
+    def pay(self):
+        """Debit user's account and credit biller.system_account (with FX)."""
+        if not self.biller.system_account:
+            raise ValueError(f"{self.biller.name} has no system account.")
+        sa = self.account
+        ra = self.biller.system_account
+        if sa.balance < self.amount:
+            raise ValueError("Insufficient funds.")
+
+        credited = self.amount
+        if sa.currency != ra.currency:
+            pair = (sa.currency, ra.currency)
+            if pair == ('JOD', 'USD'): credited = jod_to_usd(self.amount)
+            elif pair == ('USD', 'JOD'): credited = usd_to_jod(self.amount)
+            elif pair == ('JOD', 'EUR'): credited = jod_to_eur(self.amount)
+            elif pair == ('EUR', 'JOD'): credited = eur_to_jod(self.amount)
+            else: raise ValueError("Unsupported currency pair.")
+
+        with transaction.atomic():  # commit/rollback as one unit
+            sa.balance -= self.amount
+            ra.balance += credited
+            sa.save(update_fields=['balance'])
+            ra.save(update_fields=['balance'])
+
+            Transaction.objects.create(
+                sender_account=sa,
+                receiver_account=ra,
+                amount=self.amount,
+                sender_balance_after=sa.balance,
+                receiver_balance_after=ra.balance,
+            )
+            self.status = 'PAID'
+            self.save(update_fields=['status'])

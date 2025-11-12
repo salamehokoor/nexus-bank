@@ -20,10 +20,10 @@ class GoogleLogin(SocialLoginView):
 
 
 from rest_framework.response import Response
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, viewsets
 from django.db.models import Count, Q
-from .models import Account, Card, User, Transaction
-from .serializers import AccountSerializer, CardSerializer, InternalTransferSerializer, UserSerializer, ExternalTransferSerializer, TransactionSerializer
+from .models import Account, Card, User, Transaction, BillPayment
+from .serializers import AccountSerializer, CardSerializer, InternalTransferSerializer, UserSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
 
 
 class AccountsListCreateView(generics.ListCreateAPIView):
@@ -167,3 +167,14 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
             "request": request
         }).data,
                         status=status.HTTP_201_CREATED)
+
+
+class BillPaymentViewSet(viewsets.ModelViewSet):
+    serializer_class = BillPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return BillPayment.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
