@@ -233,6 +233,13 @@ class BillPaymentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["amount", "currency", "status", "created_at"]
 
+    def validate_account(self, value):
+        user = self.context["request"].user
+        if value.user != user:
+            raise serializers.ValidationError(
+                "You can only use your own accounts for bill payments.")
+        return value
+
     def create(self, validated_data):
         payment = BillPayment.objects.create(**validated_data)
         payment.pay()
