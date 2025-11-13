@@ -10,7 +10,8 @@ urlpatterns = [
          AccountCardsListCreateView.as_view(),
          name="account-cards"),
     ###
-    path('auth/google/', GoogleLogin.as_view(), name='google_login'),
+
+    #path('auth/google/', GoogleLogin.as_view(), name='google_login'),
     ###
     path("transfers/internal/",
          InternalTransferListCreateView.as_view(),

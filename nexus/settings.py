@@ -78,8 +78,6 @@ INSTALLED_APPS = [
     # REST & auth helpers
     "rest_framework",
     "rest_framework.authtoken",
-    "dj_rest_auth",
-    "dj_rest_auth.registration",
     "djoser",
 
     # Docs, dev, CORS
@@ -228,18 +226,11 @@ SPECTACULAR_SETTINGS = {
 }
 
 # --------------------
-# dj-allauth / dj-rest-auth
+# dj-allauth
 # --------------------
-# Email-only login flow (modern, less error-prone than older keys)
-# dj-allauth (new style, email-only login)
-ACCOUNT_LOGIN_METHODS = {"email"}  # replaces ACCOUNT_AUTHENTICATION_METHOD
-ACCOUNT_SIGNUP_FIELDS = [
-    "email*", "password1*", "password2*"
-]  # replaces ACCOUNT_EMAIL_REQUIRED / USERNAME_REQUIRED
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # keep if your User has no username
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_UNIQUE_EMAIL = True
-ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory"
-
+ACCOUNT_EMAIL_VERIFICATION = "optional"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
 
@@ -255,20 +246,22 @@ SOCIALACCOUNT_PROVIDERS = {
             "client_id":
             os.environ.get(
                 "GOOGLE_CLIENT_ID",
-                "33369563709-o2j5mn2ftsoscii36iqgj5ufvfkpmbge.apps.googleusercontent.com",
+                "365637000844-ginrpc58m6c28l3irk93pl5b63c5cl5h.apps.googleusercontent.com",
             ),
             "secret":
             os.environ.get(
                 "GOOGLE_CLIENT_SECRET",
-                "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",
+                "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",
             ),
             "key":
-            "",
+            ""
+        },
+        "SCOPE": ["profile", "email"],
+        "AUTH_PARAMS": {
+            "access_type": "online"
         }
     }
 }
-
-REST_AUTH = {"USE_JWT": True}
 
 DJOSER = {
     'LOGIN_FIELD': 'email',

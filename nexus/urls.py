@@ -12,12 +12,13 @@ urlpatterns = [
     # Admin
     path('admin/', admin.site.urls),
 
-    # Allauth (Google login)
-    path('social/', include('allauth.urls')),
-
-    # REST Auth
-    path('api/auth/', include('dj_rest_auth.urls')),
-    path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
+    # Allauth UI (including Google login)
+    path('accounts/', include('allauth.urls')),
+    #Now allauth exposes endpoints like:
+    #/accounts/login/
+    #/accounts/logout/
+    #/accounts/google/login/
+    #/accounts/google/login/callback/
 
     # Djoser / JWT routes
     path('auth/', include('djoser.urls')),
@@ -32,5 +33,6 @@ urlpatterns = [
     path('api/schema/redoc/',
          SpectacularRedocView.as_view(url_name='schema'),
          name='redoc'),
+    ###
     path('', include('api.urls')),
 ]
