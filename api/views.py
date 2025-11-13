@@ -5,25 +5,15 @@ from .models import Account, Card
 from .serializers import AccountSerializer, CardSerializer
 from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
-
-
-class GoogleLogin(SocialLoginView):
-    adapter_class = GoogleOAuth2Adapter
-
-
-from dj_rest_auth.registration.views import SocialLoginView
-from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
-
-
-class GoogleLogin(SocialLoginView):
-    adapter_class = GoogleOAuth2Adapter
-
-
 from rest_framework.response import Response
 from rest_framework import generics, permissions, status, viewsets
 from django.db.models import Count, Q
 from .models import Account, Card, User, Transaction, BillPayment
 from .serializers import AccountSerializer, CardSerializer, InternalTransferSerializer, UserSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
+
+
+class GoogleLogin(SocialLoginView):
+    adapter_class = GoogleOAuth2Adapter
 
 
 class AccountsListCreateView(generics.ListCreateAPIView):
@@ -73,8 +63,6 @@ class AccountCardsListCreateView(generics.ListCreateAPIView):
                           user=self.request.user)
         return Card.objects.filter(account_id=acct_num).order_by("-created_at")
         # return only cards linked to that account
-        return Card.objects.filter(
-            account_number=account_num).order_by("-created_at")
 
     def perform_create(self, serializer):
         acct_num = self.kwargs["account_number"]
@@ -169,12 +157,28 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
                         status=status.HTTP_201_CREATED)
 
 
-class BillPaymentViewSet(viewsets.ModelViewSet):
+class BillPaymentListCreateView(generics.ListCreateAPIView):
     serializer_class = BillPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return BillPayment.objects.filter(user=self.request.user)
+        user = getattr(self.request, "user", None)
+        #get the value of this attribute if it exists, otherwise return a default value.
+        if not getattr(user, "is_authenticated", False):
+            return BillPayment.objects.none()
+        return BillPayment.objects.filter(user=user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save()  # user is injected by the serializer
+
+
+class BillPaymentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = BillPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = getattr(self.request, "user", None)
+        #get the value of this attribute if it exists, otherwise return a default value.
+        if not getattr(user, "is_authenticated", False):
+            return BillPayment.objects.none()
+        return BillPayment.objects.filter(user=user)

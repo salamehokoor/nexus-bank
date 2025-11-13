@@ -1,6 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
-from .models import Account, Card, User, Transaction, BillPayment
+from .models import Account, Card, User, Transaction, BillPayment, Biller
 from django.conf import settings
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
@@ -223,24 +223,56 @@ class ExternalTransferSerializer(serializers.Serializer):
 
 
 class BillPaymentSerializer(serializers.ModelSerializer):
-    biller_name = serializers.ReadOnlyField(source="biller.name")
+    # take the user from the authenticated request (JWT), never from client input
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+
+    # limit the account choices to the current user's accounts (set per-request)
+    account = serializers.PrimaryKeyRelatedField(
+        queryset=Account.objects.none())
+
+    # amount & currency come from model.save(); expose as read-only
+    amount = serializers.DecimalField(max_digits=12,
+                                      decimal_places=2,
+                                      read_only=True)
+    currency = serializers.CharField(read_only=True)
 
     class Meta:
         model = BillPayment
         fields = [
-            "id", "biller", "biller_name", "account", "reference_number",
-            "amount", "currency", "status", "created_at"
+            "id",
+            "user",
+            "account",
+            "biller",
+            "reference_number",
+            "amount",
+            "currency",
+            "status",
         ]
-        read_only_fields = ["amount", "currency", "status", "created_at"]
+        read_only_fields = ("amount", "currency", "status")
 
-    def validate_account(self, value):
-        user = self.context["request"].user
-        if value.user != user:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        req = self.context.get("request")
+        # During real requests, filter by the JWT user; during schema gen, use empty QS
+        if req and getattr(req.user, "is_authenticated", False):
+            self.fields["account"].queryset = Account.objects.filter(
+                user=req.user)
+        else:
+            self.fields["account"].queryset = Account.objects.none()
+
+    def validate_account(self, account: Account):
+        # Extra guard in case someone crafts a foreign account ID
+        req = self.context.get("request")
+        if req and getattr(req.user, "is_authenticated", False):
+            if account.user_id != req.user.id:
+                raise serializers.ValidationError(
+                    "This account does not belong to you.")
+        return account
+
+    def validate(self, data):
+        # Optional sanity check on biller fixed amount
+        biller: Biller | None = data.get("biller")
+        if biller and biller.fixed_amount <= 0:
             raise serializers.ValidationError(
-                "You can only use your own accounts for bill payments.")
-        return value
-
-    def create(self, validated_data):
-        payment = BillPayment.objects.create(**validated_data)
-        payment.pay()
-        return payment
+                {"biller": "Biller has no payable fixed amount."})
+        return data
