@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import AccountsListCreateView, AccountCardsListCreateView  #ActivateUserView
 from rest_framework.routers import DefaultRouter
-from .views import AccountsListCreateView, AccountCardsListCreateView, InternalTransferListCreateView, ExternalTransferListCreateView, BillPaymentListCreateView, GoogleLogin, BillPaymentDetailView
+from .views import AccountsListCreateView, AccountCardsListCreateView, InternalTransferListCreateView, ExternalTransferListCreateView, BillPaymentListCreateView, BillPaymentDetailView
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
