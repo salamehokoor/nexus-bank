@@ -1,5 +1,5 @@
 from django.db import models, transaction
-from django.contrib.auth.models import AbstractUser, Permission, BaseUserManager
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from decimal import Decimal
 from django.db.models import Q, F
 import uuid
@@ -326,11 +326,17 @@ class BillPayment(models.Model):
         credited = self.amount
         if sa.currency != ra.currency:
             pair = (sa.currency, ra.currency)
-            if pair == ('JOD', 'USD'): credited = jod_to_usd(self.amount)
-            elif pair == ('USD', 'JOD'): credited = usd_to_jod(self.amount)
-            elif pair == ('JOD', 'EUR'): credited = jod_to_eur(self.amount)
-            elif pair == ('EUR', 'JOD'): credited = eur_to_jod(self.amount)
-            else: raise ValueError("Unsupported currency pair.")
+
+            if pair == ("JOD", "USD"):
+                credited = jod_to_usd(self.amount)
+            elif pair == ("USD", "JOD"):
+                credited = usd_to_jod(self.amount)
+            elif pair == ("JOD", "EUR"):
+                credited = jod_to_eur(self.amount)
+            elif pair == ("EUR", "JOD"):
+                credited = eur_to_jod(self.amount)
+        else:
+            raise ValueError("Unsupported currency pair.")
 
         with transaction.atomic():  # commit/rollback as one unit
             sa.balance -= self.amount

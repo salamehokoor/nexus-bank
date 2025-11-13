@@ -1,10 +1,19 @@
 from django.contrib import admin
-from .models import *
+from .models import (
+    User,
+    UserProfile,
+    UserAddress,
+    Account,
+    Card,
+    Transaction,
+    Biller,
+    BillPayment,
+)
 
 admin.site.site_header = "Nexus Admin"
-admin.site.site_title = "Nexus Admin"
+admin.site.site_title = "Nexus Admin Portal"
 admin.site.index_title = "Dashboard"
-# Register all your models
+
 admin.site.register(User)
 admin.site.register(UserProfile)
 admin.site.register(UserAddress)

@@ -1,4 +1,5 @@
 # nexus/settings.py
+from datetime import timedelta
 from pathlib import Path
 import os
 
@@ -205,8 +206,13 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("JWT", ),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    #"ROTATE_REFRESH_TOKENS": True,
+    #"BLACKLIST_AFTER_ROTATION": True,
 }
 
+FRONTEND_URL = "https://nexus-banking.com"
 # --------------------
 # API Docs (Spectacular)
 # --------------------
@@ -225,11 +231,6 @@ SPECTACULAR_SETTINGS = {
     }, {
         "url": "http://127.0.0.1:8000/"
     }],
-    "logo": {
-        "url": "/static/api/images/logo.png",
-        "altText": "Nexus",
-        "href": "/"
-    },
 }
 
 # --------------------
@@ -249,7 +250,7 @@ ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 # Other account rules
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you want confirmation email
-LOGIN_REDIRECT_URL = "/"
+LOGIN_REDIRECT_URL = "/auth/social/complete/"
 LOGOUT_REDIRECT_URL = "/"
 
 AUTHENTICATION_BACKENDS = [

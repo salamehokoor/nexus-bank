@@ -1,55 +1,34 @@
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions
-from django.db.models import Count
 from .models import Account, Card
 from .serializers import AccountSerializer, CardSerializer
-from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from rest_framework.response import Response
-from rest_framework import generics, permissions, status, viewsets
-from django.db.models import Count, Q
-from .models import Account, Card, User, Transaction, BillPayment
-from .serializers import AccountSerializer, CardSerializer, InternalTransferSerializer, UserSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
-from rest_framework.views import APIView
-from djoser.serializers import ActivationSerializer as UserActivationSerializer
-from django.contrib.auth import get_user_model
+from rest_framework import status
+from django.db.models import Q
+from .models import Transaction, BillPayment
+from .serializers import InternalTransferSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
 from django.shortcuts import redirect
-from django.utils.http import urlsafe_base64_decode
-from django.contrib.auth.tokens import default_token_generator
+from rest_framework_simplejwt.tokens import RefreshToken
 
-#class GoogleLogin(SocialLoginView):
-#   adapter_class = GoogleOAuth2Adapter
 
-#User = get_user_model()
+def social_login_complete(request):
+    """
+    Called after allauth finishes Google login.
+    request.user is already authenticated at this point.
+    We generate JWTs and redirect to the frontend with them.
+    """
+    if not request.user.is_authenticated:
+        return redirect(
+            f"{settings.FRONTEND_URL}/auth/social/error?reason=not_authenticated"
+        )
 
-#class ActivateUserView(APIView):
-#    permission_classes = [permissions.AllowAny]
+    refresh = RefreshToken.for_user(request.user)
+    access = str(refresh.access_token)
 
-# def get(self, request, uid, token, *args, **kwargs):
-#    try:
-# Djoser encodes the user id as base64
-#       uid_str = urlsafe_base64_decode(uid).decode()
-#      user = User.objects.get(pk=uid_str)
-# except (TypeError, ValueError, OverflowError, User.DoesNotExist,
-#        UnicodeDecodeError):
-#   return Response(
-#      {"detail": "Invalid activation link."},
-#     status=status.HTTP_400_BAD_REQUEST,
-#)
-
-# Check the token using Django's default token generator
-#if not default_token_generator.check_token(user, token):
-#   return Response(
-#      {"detail": "Invalid or expired activation token."},
-#     status=status.HTTP_400_BAD_REQUEST,
-#)
-
-# Mark user as active
-#if not user.is_active:
-#   user.is_active = True
-#  user.save(update_fields=["is_active"])
-
-# Redirect to your frontend (success page)
-#return redirect("http://localhost:3000/auth/users/activation")
+    redirect_url = (f"{settings.FRONTEND_URL}/auth/social/success"
+                    f"?access={access}&refresh={refresh}")
+    return redirect(redirect_url)
 
 
 class AccountsListCreateView(generics.ListCreateAPIView):

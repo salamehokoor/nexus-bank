@@ -1,7 +1,6 @@
 from django.urls import path
-from .views import AccountsListCreateView, AccountCardsListCreateView  #ActivateUserView
-from rest_framework.routers import DefaultRouter
-from .views import AccountsListCreateView, AccountCardsListCreateView, InternalTransferListCreateView, ExternalTransferListCreateView, BillPaymentListCreateView, BillPaymentDetailView
+from .views import AccountsListCreateView, AccountCardsListCreateView
+from .views import InternalTransferListCreateView, ExternalTransferListCreateView, BillPaymentListCreateView, BillPaymentDetailView, social_login_complete
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
@@ -10,8 +9,9 @@ urlpatterns = [
          AccountCardsListCreateView.as_view(),
          name="account-cards"),
     ###
-
-    #path('auth/google/', GoogleLogin.as_view(), name='google_login'),
+    path("auth/social/complete/",
+         social_login_complete,
+         name="social-login-complete"),
     ###
     path("transfers/internal/",
          InternalTransferListCreateView.as_view(),
@@ -26,9 +26,4 @@ urlpatterns = [
     path("bill/<int:pk>/", BillPaymentDetailView.as_view(),
          name="bill-detail"),
     ###
-    #path(
-    #   "auth/users/activation/<uid>/<token>/",
-    #   ActivateUserView.as_view(),
-    #  name="user-activation-click",
-    #),
 ]

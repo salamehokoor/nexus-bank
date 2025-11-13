@@ -1,7 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
 from .models import Account, Card, User, Transaction, BillPayment, Biller
-from django.conf import settings
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
 
@@ -193,7 +192,6 @@ class ExternalTransferSerializer(serializers.Serializer):
                 user=req.user, is_active=True)
 
     def validate(self, attrs):
-        req = self.context["request"]
         sender = attrs["sender_account"]
         # Look up recipient by account_number; keep generic error to avoid enumeration
         try:

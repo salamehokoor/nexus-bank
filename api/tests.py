@@ -250,19 +250,28 @@ class AccountCardsAPITests(APITestCase):
 
 
 class TransactionsAPITests(APITestCase):
+
     def setUp(self):
         self.client = APIClient()
         self.User = get_user_model()
-        self.u1 = self.User.objects.create_user(email="tx1@example.com", password="x")
-        self.u2 = self.User.objects.create_user(email="tx2@example.com", password="x")
-        self.a1 = Account.objects.create(user=self.u1, balance=Decimal("100.00"))
-        self.a2 = Account.objects.create(user=self.u2, balance=Decimal("50.00"))
-        self.a3 = Account.objects.create(user=self.u1, balance=Decimal("10.00"))
+        self.u1 = self.User.objects.create_user(email="tx1@example.com",
+                                                password="x")
+        self.u2 = self.User.objects.create_user(email="tx2@example.com",
+                                                password="x")
+        self.a1 = Account.objects.create(user=self.u1,
+                                         balance=Decimal("100.00"))
+        self.a2 = Account.objects.create(user=self.u2,
+                                         balance=Decimal("50.00"))
+        self.a3 = Account.objects.create(user=self.u1,
+                                         balance=Decimal("10.00"))
 
     def test_auth_required(self):
         url = reverse("transactions")
-        self.assertEqual(self.client.get(url).status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(self.client.post(url, {}, format="json").status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(
+            self.client.get(url).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(
+            self.client.post(url, {}, format="json").status_code,
+            status.HTTP_401_UNAUTHORIZED)
 
     def test_create_transaction_success(self):
         self.client.force_authenticate(user=self.u1)
@@ -274,11 +283,14 @@ class TransactionsAPITests(APITestCase):
         }
         res = self.client.post(url, payload, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.a1.refresh_from_db(); self.a2.refresh_from_db()
+        self.a1.refresh_from_db()
+        self.a2.refresh_from_db()
         self.assertEqual(self.a1.balance, Decimal("60.00"))
         self.assertEqual(self.a2.balance, Decimal("90.00"))
-        self.assertEqual(Decimal(str(res.data["sender_balance_after"])), Decimal("60.00"))
-        self.assertEqual(Decimal(str(res.data["receiver_balance_after"])), Decimal("90.00"))
+        self.assertEqual(Decimal(str(res.data["sender_balance_after"])),
+                         Decimal("60.00"))
+        self.assertEqual(Decimal(str(res.data["receiver_balance_after"])),
+                         Decimal("90.00"))
 
     def test_cannot_send_from_foreign_account(self):
         self.client.force_authenticate(user=self.u2)
@@ -304,9 +316,13 @@ class TransactionsAPITests(APITestCase):
 
     def test_list_only_user_related_transactions(self):
         # seed: one u1->u2 and one unrelated u2->u2 (different accounts)
-        Transaction.objects.create(sender_account=self.a1, receiver_account=self.a2, amount=Decimal("5.00"))
+        Transaction.objects.create(sender_account=self.a1,
+                                   receiver_account=self.a2,
+                                   amount=Decimal("5.00"))
         a4 = Account.objects.create(user=self.u2, balance=Decimal("30.00"))
-        Transaction.objects.create(sender_account=self.a2, receiver_account=a4, amount=Decimal("5.00"))
+        Transaction.objects.create(sender_account=self.a2,
+                                   receiver_account=a4,
+                                   amount=Decimal("5.00"))
         self.client.force_authenticate(user=self.u1)
         url = reverse("transactions")
         res = self.client.get(url)
