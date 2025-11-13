@@ -45,9 +45,11 @@ ALLOWED_HOSTS = [
 #SESSION_COOKIE_SAMESITE = "Lax"
 
 # CORS/CSRF (frontend is on Netlify custom subdomain)
-#CORS_ALLOWED_ORIGINS = [
-#    "https://nexus-banking.com",
-#]
+CORS_ALLOWED_ORIGINS = [
+    "https://nexus-banking.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
 #CSRF_TRUSTED_ORIGINS = [
 #    "https://nexus-banking.com",
