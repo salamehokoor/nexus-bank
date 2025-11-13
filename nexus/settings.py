@@ -228,9 +228,20 @@ SPECTACULAR_SETTINGS = {
 # --------------------
 # dj-allauth
 # --------------------
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+# dj-allauth config (email-only, NO username field)
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # custom User has no username field
+
+# User logs in with email only
+ACCOUNT_LOGIN_METHODS = {
+    "email"
+}  # make sure NOT {"username"} or {"email", "username"}
+
+# Fields shown on signup form (new API: * means required)
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+
+# Other account rules
 ACCOUNT_UNIQUE_EMAIL = True
-ACCOUNT_EMAIL_VERIFICATION = "optional"
+ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you want confirmation email
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
 
