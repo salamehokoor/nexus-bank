@@ -15,36 +15,43 @@ SECRET_KEY = os.environ.get(
 # Keep False in production
 
 ### CHANGE TO FALSE BEFORE PUSHING TO PRODUCTION
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
 # --------------------
-# HOSTS / PROXY / SECURITY
+# HOSTS
 # --------------------
 ALLOWED_HOSTS = [
     "api.nexus-banking.com",
     "127.0.0.1",
-    "localhost",
 ]
 
 # Nginx passes original scheme/host to Django
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
-# HTTPS hardening (safe defaults)
-SECURE_SSL_REDIRECT = True
-SECURE_HSTS_SECONDS = 31536000
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+# HTTPS hardening
+if DEBUG:
+    # Local dev: no forced HTTPS, cookies can be sent over http
+    SECURE_SSL_REDIRECT = False
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+    SECURE_CONTENT_TYPE_NOSNIFF = False
 
-# Cookies over HTTPS
-CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SAMESITE = "Lax"
-SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+else:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SAMESITE = "Lax"
 
-# CORS/CSRF (frontend is on Netlify custom subdomain)
 CORS_ALLOWED_ORIGINS = [
     "https://nexus-banking.com",
     "http://localhost:3000",
@@ -53,7 +60,7 @@ CORS_ALLOWED_ORIGINS = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://nexus-banking.com",
-    "https://api.nexus-banking.com",  # allow admin/forms on your own domain
+    "https://api.nexus-banking.com",
 ]
 
 # --------------------
@@ -253,24 +260,8 @@ AUTHENTICATION_BACKENDS = [
 # Google OAuth — use env in prod; fallback keeps current behavior
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
-        "APP": {
-            "client_id":
-            os.environ.get(
-                "GOOGLE_CLIENT_ID",
-                "365637000844-ginrpc58m6c28l3irk93pl5b63c5cl5h.apps.googleusercontent.com",
-            ),
-            "secret":
-            os.environ.get(
-                "GOOGLE_CLIENT_SECRET",
-                "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",
-            ),
-            "key":
-            ""
-        },
-        "SCOPE": ["profile", "email"],
-        "AUTH_PARAMS": {
-            "access_type": "online"
-        }
+        'EMAIL_AUTHENTICATION': True,
+        'SCOPE': ["profile", "email"],
     }
 }
 
@@ -285,8 +276,8 @@ DJOSER = {
     'USERNAME_RESET_CONFIRM_URL': '/email/reset/confirm/{uid}/{token}',
     'ACTIVATION_URL': '/auth/activate/{uid}/{token}',
     'SEND_ACTIVATION_EMAIL': True,
-    'DOMAIN': '127.0.0.1:8000',  # 👈 local backend domain
-    'SITE_NAME': 'NexusBank',  # used as example.com replacement
+    'DOMAIN': '127.0.0.1:8000',  # default, will override below
+    'SITE_NAME': 'NexusBank',
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
         'user': 'api.serializers.UserSerializer',
@@ -294,10 +285,14 @@ DJOSER = {
     },
 }
 
+if not DEBUG:
+    DJOSER['DOMAIN'] = 'api.nexus-banking.com'
+    DJOSER['SITE_NAME'] = 'NexusBank'
+
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "nexusbank49@gmail.com"
-EMAIL_HOST_PASSWORD = "olvhyvasmjcxxfat"  # Use an app password, not your Gmail password
+EMAIL_HOST_PASSWORD = "olvhyvasmjcxxfat"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
