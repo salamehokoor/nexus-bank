@@ -10,10 +10,49 @@ from rest_framework import generics, permissions, status, viewsets
 from django.db.models import Count, Q
 from .models import Account, Card, User, Transaction, BillPayment
 from .serializers import AccountSerializer, CardSerializer, InternalTransferSerializer, UserSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
+from rest_framework.views import APIView
+from djoser.serializers import ActivationSerializer as UserActivationSerializer
+from django.contrib.auth import get_user_model
+from django.shortcuts import redirect
+from django.utils.http import urlsafe_base64_decode
+from django.contrib.auth.tokens import default_token_generator
 
 
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
+
+
+#User = get_user_model()
+
+#class ActivateUserView(APIView):
+#    permission_classes = [permissions.AllowAny]
+
+# def get(self, request, uid, token, *args, **kwargs):
+#    try:
+# Djoser encodes the user id as base64
+#       uid_str = urlsafe_base64_decode(uid).decode()
+#      user = User.objects.get(pk=uid_str)
+# except (TypeError, ValueError, OverflowError, User.DoesNotExist,
+#        UnicodeDecodeError):
+#   return Response(
+#      {"detail": "Invalid activation link."},
+#     status=status.HTTP_400_BAD_REQUEST,
+#)
+
+# Check the token using Django's default token generator
+#if not default_token_generator.check_token(user, token):
+#   return Response(
+#      {"detail": "Invalid or expired activation token."},
+#     status=status.HTTP_400_BAD_REQUEST,
+#)
+
+# Mark user as active
+#if not user.is_active:
+#   user.is_active = True
+#  user.save(update_fields=["is_active"])
+
+# Redirect to your frontend (success page)
+#return redirect("http://localhost:3000/auth/users/activation")
 
 
 class AccountsListCreateView(generics.ListCreateAPIView):

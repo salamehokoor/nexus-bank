@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AccountsListCreateView, AccountCardsListCreateView
+from .views import AccountsListCreateView, AccountCardsListCreateView  #ActivateUserView
 from rest_framework.routers import DefaultRouter
 from .views import AccountsListCreateView, AccountCardsListCreateView, InternalTransferListCreateView, ExternalTransferListCreateView, BillPaymentListCreateView, GoogleLogin, BillPaymentDetailView
 
@@ -24,4 +24,10 @@ urlpatterns = [
     ###
     path("bill/<int:pk>/", BillPaymentDetailView.as_view(),
          name="bill-detail"),
+    ###
+    #path(
+    #   "auth/users/activation/<uid>/<token>/",
+    #   ActivateUserView.as_view(),
+    #  name="user-activation-click",
+    #),
 ]

@@ -282,15 +282,17 @@ REST_AUTH = {"USE_JWT": True}
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
-    #'USER_CREATE_PASSWORD_RETYPE': True,
+    'USER_CREATE_PASSWORD_RETYPE': True,
     'USERNAME_CHANGED_EMAIL_CONFIRMATION': True,
     'PASSWORD_CHANGED_EMAIL_CONFIRMATION': True,
     'SEND_CONFIRMATION_EMAIL': True,
-    #'SET_PASSWORD_RETYPE': True,
+    'SET_PASSWORD_RETYPE': True,
     'PASSWORD_RESET_CONFIRM_URL': '/password/reset/confirm/{uid}/{token}',
     'USERNAME_RESET_CONFIRM_URL': '/email/reset/confirm/{uid}/{token}',
-    'ACTIVATION_URL': '/activate/{uid}/{token}',
+    'ACTIVATION_URL': '/auth/activate/{uid}/{token}',
     'SEND_ACTIVATION_EMAIL': True,
+    'DOMAIN': '127.0.0.1:8000',  # 👈 local backend domain
+    'SITE_NAME': 'NexusBank',  # used as example.com replacement
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
         'user': 'api.serializers.UserSerializer',
