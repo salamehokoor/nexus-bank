@@ -32,6 +32,9 @@ urlpatterns = [
     path('api/schema/redoc/',
          SpectacularRedocView.as_view(url_name='schema'),
          name='redoc'),
+
+    ## Risk module
+    path("risk/", include("risk.urls")),
     ###
     path('', include('api.urls')),
 ]

@@ -10,6 +10,7 @@ from .models import Transaction, BillPayment
 from .serializers import InternalTransferSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
 from django.shortcuts import redirect
 from rest_framework_simplejwt.tokens import RefreshToken
+from risk.rules import high_value_transfer
 
 
 def social_login_complete(request):
@@ -31,6 +32,7 @@ def social_login_complete(request):
     return redirect(redirect_url)
 
 
+###
 class AccountsListCreateView(generics.ListCreateAPIView):
     """
     GET /accounts
@@ -126,10 +128,16 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
         s = self.get_serializer(data=request.data)
         s.is_valid(raise_exception=True)
         tx = s.save()
-        return Response(TransactionSerializer(tx, context={
-            "request": request
-        }).data,
-                        status=status.HTTP_201_CREATED)
+
+        # 🔥 send this transfer to the risk engine
+        high_value_transfer(request, tx)
+
+        return Response(
+            TransactionSerializer(tx, context={
+                "request": request
+            }).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ExternalTransferListCreateView(generics.ListCreateAPIView):
@@ -166,10 +174,16 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
         s = self.get_serializer(data=request.data)
         s.is_valid(raise_exception=True)
         tx = s.save()
-        return Response(TransactionSerializer(tx, context={
-            "request": request
-        }).data,
-                        status=status.HTTP_201_CREATED)
+
+        # 🔥 also evaluate external transfers for high-value risk
+        high_value_transfer(request, tx)
+
+        return Response(
+            TransactionSerializer(tx, context={
+                "request": request
+            }).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class BillPaymentListCreateView(generics.ListCreateAPIView):

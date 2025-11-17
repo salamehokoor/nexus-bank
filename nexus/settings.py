@@ -92,9 +92,11 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_extensions",
     "corsheaders",
+    "django_filters",
 
     # Your app(s)
     "api",
+    "risk.apps.RiskConfig"
 ]
 
 SITE_ID = 1
