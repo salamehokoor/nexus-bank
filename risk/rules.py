@@ -1,5 +1,5 @@
 # risk/rules.py
-from risk.utils import get_country_from_ip
+from risk.utils import get_country_from_ip, _get_ip_from_request
 from .models import Incident
 
 
@@ -30,12 +30,3 @@ def high_value_transfer(request, transfer, threshold=1000):
             "to_account": to_acc_number,
         },
     )
-
-
-def _get_ip_from_request(request):
-    if not request:
-        return None
-    xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")

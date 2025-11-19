@@ -178,7 +178,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # I18N
 # --------------------
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = "Asia/Amman"
 USE_I18N = True
 USE_TZ = True
 
@@ -312,7 +312,7 @@ DJOSER = {
 }
 
 if not DEBUG:
-    DJOSER['DOMAIN'] = 'api.nexus-banking.com'
+    DJOSER['DOMAIN'] = 'https://nexus-banking.com/'
     DJOSER['SITE_NAME'] = 'NexusBank'
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"

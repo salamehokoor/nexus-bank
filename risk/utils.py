@@ -21,3 +21,12 @@ def get_country_from_ip(ip: str) -> str:
         return data.get("country", "")
     except Exception:
         return ""
+
+
+def _get_ip_from_request(request):
+    if not request:
+        return None
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
