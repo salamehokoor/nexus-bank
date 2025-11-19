@@ -302,7 +302,7 @@ DJOSER = {
     'USERNAME_RESET_CONFIRM_URL': '/email/reset/confirm/{uid}/{token}',
     'ACTIVATION_URL': '/auth/activate/{uid}/{token}',
     'SEND_ACTIVATION_EMAIL': True,
-    'DOMAIN': '127.0.0.1:8000',  # default, will override below
+    'DOMAIN': 'https://nexus-banking.com/',
     'SITE_NAME': 'NexusBank',
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
@@ -310,10 +310,6 @@ DJOSER = {
         'user_delete': 'djoser.serializers.UserDeleteSerializer'
     },
 }
-
-if not DEBUG:
-    DJOSER['DOMAIN'] = 'https://nexus-banking.com/'
-    DJOSER['SITE_NAME'] = 'NexusBank'
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
