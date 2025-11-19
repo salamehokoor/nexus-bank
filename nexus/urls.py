@@ -9,6 +9,7 @@ from drf_spectacular.views import (
 
 urlpatterns = [
     # Admin
+    # path('grappelli/', include('grappelli.urls')),
     path('admin/', admin.site.urls),
 
     # Allauth UI (including Google login)
@@ -35,6 +36,9 @@ urlpatterns = [
 
     ## Risk module
     path("risk/", include("risk.urls")),
+    ## business module
+    path("business/", include("business.urls")),
+
     ###
     path('', include('api.urls')),
 ]
