@@ -306,6 +306,7 @@ class BillPayment(models.Model):
                               choices=[('PENDING', 'Pending'),
                                        ('PAID', 'Paid'), ('FAILED', 'Failed')],
                               default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
         # on create, enforce fixed amount and account currency

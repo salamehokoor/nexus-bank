@@ -69,6 +69,7 @@ CSRF_TRUSTED_ORIGINS = [
 # --------------------
 INSTALLED_APPS = [
     # Django core
+    # 'grappelli',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -100,6 +101,8 @@ INSTALLED_APPS = [
     "axes",
     # django-cleanup MUST be last
     "django_cleanup.apps.CleanupConfig",
+    "risk.apps.RiskConfig",
+    "business"
 ]
 
 SITE_ID = 1
