@@ -101,7 +101,6 @@ INSTALLED_APPS = [
     "axes",
     # django-cleanup MUST be last
     "django_cleanup.apps.CleanupConfig",
-    "risk.apps.RiskConfig",
     "business"
 ]
 
