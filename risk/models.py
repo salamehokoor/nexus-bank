@@ -12,16 +12,24 @@ class Incident(models.Model):
         ("critical", "Critical"),
     )
 
-    user = models.ForeignKey(User,
-                             null=True,
-                             blank=True,
-                             on_delete=models.SET_NULL)
+    user = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
     ip = models.GenericIPAddressField(null=True, blank=True)
     country = models.CharField(max_length=100, blank=True)
+
+    # NEW: what email was used in the attempt (success or fail)
+    attempted_email = models.EmailField(blank=True)
+
     event = models.CharField(max_length=255)
-    severity = models.CharField(max_length=10,
-                                choices=SEVERITY_CHOICES,
-                                default="low")
+    severity = models.CharField(
+        max_length=10,
+        choices=SEVERITY_CHOICES,
+        default="low",
+    )
     details = models.JSONField(default=dict, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
@@ -34,6 +42,10 @@ class LoginEvent(models.Model):
     ip = models.GenericIPAddressField(null=True, blank=True)
     country = models.CharField(max_length=100, blank=True)
     successful = models.BooleanField(default=False)
+
+    # NEW: what the client typed as email
+    attempted_email = models.EmailField(blank=True)
+
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

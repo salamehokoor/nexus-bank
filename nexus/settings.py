@@ -13,7 +13,7 @@ SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY",
     "django-insecure-x@hsf*xa)67w93ndtsx$oc*&mh5xs^f)@@g5&3*1dyl2=q@g+@")
 
-# Keep False in production
+IPINFO_TOKEN = os.environ.get("IPINFO_TOKEN", "")
 
 ### CHANGE TO FALSE BEFORE PUSHING TO PRODUCTION
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
@@ -98,6 +98,10 @@ INSTALLED_APPS = [
     # Your app(s)
     "api",
     "risk.apps.RiskConfig",
+    "axes",
+    # django-cleanup MUST be last
+    "django_cleanup.apps.CleanupConfig",
+    "risk.apps.RiskConfig",
     "business"
 ]
 
@@ -111,6 +115,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "axes.middleware.AxesMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -176,7 +181,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # I18N
 # --------------------
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = "Asia/Amman"
 USE_I18N = True
 USE_TZ = True
 
@@ -206,6 +211,22 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_SCHEMA_CLASS":
     "drf_spectacular.openapi.AutoSchema",
+
+    # 🔹 Global throttles
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        # Global limits
+        "anon": "30/minute",
+        "user": "300/minute",
+
+        # Scoped limits (used with ScopedRateThrottle + throttle_scope)
+        "login": "5/minute",
+        "password_reset": "3/hour",
+    },
 }
 
 SIMPLE_JWT = {
@@ -258,6 +279,7 @@ LOGIN_REDIRECT_URL = "/auth/social/complete/"
 LOGOUT_REDIRECT_URL = "/"
 
 AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
     "django.contrib.auth.backends.ModelBackend",
     "allauth.account.auth_backends.AuthenticationBackend",
 ]
@@ -283,7 +305,7 @@ DJOSER = {
     'USERNAME_RESET_CONFIRM_URL': '/email/reset/confirm/{uid}/{token}',
     'ACTIVATION_URL': '/auth/activate/{uid}/{token}',
     'SEND_ACTIVATION_EMAIL': True,
-    'DOMAIN': '127.0.0.1:8000',  # default, will override below
+    'DOMAIN': 'https://nexus-banking.com/',
     'SITE_NAME': 'NexusBank',
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
@@ -292,10 +314,6 @@ DJOSER = {
     },
 }
 
-if not DEBUG:
-    DJOSER['DOMAIN'] = 'api.nexus-banking.com'
-    DJOSER['SITE_NAME'] = 'NexusBank'
-
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
@@ -303,3 +321,8 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "nexusbank49@gmail.com"
 EMAIL_HOST_PASSWORD = "olvhyvasmjcxxfat"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+AXES_FAILURE_LIMIT = 5  # lock after 5 tries
+AXES_LOCK_OUT_AT_FAILURE = True
+AXES_COOLOFF_TIME = 1  # hours before unlock
+AXES_ENABLED = True
