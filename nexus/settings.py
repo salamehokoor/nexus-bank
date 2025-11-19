@@ -302,7 +302,7 @@ DJOSER = {
     'USERNAME_RESET_CONFIRM_URL': '/email/reset/confirm/{uid}/{token}',
     'ACTIVATION_URL': '/auth/activate/{uid}/{token}',
     'SEND_ACTIVATION_EMAIL': True,
-    'DOMAIN': 'https://nexus-banking.com/',
+    'DOMAIN': 'nexus-banking.com',
     'SITE_NAME': 'NexusBank',
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
