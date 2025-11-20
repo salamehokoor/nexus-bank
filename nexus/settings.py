@@ -305,7 +305,7 @@ DJOSER = {
     'USERNAME_RESET_CONFIRM_URL': '/email/reset/confirm/{uid}/{token}',
     'ACTIVATION_URL': '/auth/activate/{uid}/{token}',
     'SEND_ACTIVATION_EMAIL': True,
-    'DOMAIN': 'https://nexus-banking.com/',
+    'DOMAIN': 'nexus-banking.com',
     'SITE_NAME': 'NexusBank',
     'SERIALIZERS': {
         'user_create': 'api.serializers.UserCreateSerializer',
@@ -326,3 +326,4 @@ AXES_FAILURE_LIMIT = 5  # lock after 5 tries
 AXES_LOCK_OUT_AT_FAILURE = True
 AXES_COOLOFF_TIME = 1  # hours before unlock
 AXES_ENABLED = True
+AXES_LOCKOUT_PARAMETERS = ['ip_address']
