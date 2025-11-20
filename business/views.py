@@ -2,10 +2,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import permissions
 
-from .models import DailyBusinessMetrics, CountryUserMetrics, MonthlySummary
+from .models import DailyBusinessMetrics, CountryUserMetrics, MonthlySummary, WeeklySummary
 from .serializers import (DailyBusinessMetricsSerializer,
                           CountryUserMetricsSerializer,
-                          MonthlySummarySerializer, BusinessOverviewSerializer)
+                          MonthlySummarySerializer, WeeklySummarySerializer,
+                          BusinessOverviewSerializer)
 
 
 class DailyMetricsView(APIView):
@@ -13,17 +14,15 @@ class DailyMetricsView(APIView):
 
     def get(self, request):
         obj = DailyBusinessMetrics.objects.order_by("-date").first()
-        serializer = DailyBusinessMetricsSerializer(obj)
-        return Response(serializer.data)
+        return Response(DailyBusinessMetricsSerializer(obj).data)
 
 
-class CountryMetricsView(APIView):
+class WeeklySummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        qs = CountryUserMetrics.objects.order_by("-date")
-        serializer = CountryUserMetricsSerializer(qs, many=True)
-        return Response(serializer.data)
+        qs = WeeklySummary.objects.order_by("-week_start")
+        return Response(WeeklySummarySerializer(qs, many=True).data)
 
 
 class MonthlySummaryView(APIView):
@@ -31,32 +30,33 @@ class MonthlySummaryView(APIView):
 
     def get(self, request):
         qs = MonthlySummary.objects.order_by("-month")
-        serializer = MonthlySummarySerializer(qs, many=True)
-        return Response(serializer.data)
+        return Response(MonthlySummarySerializer(qs, many=True).data)
 
 
-class BusinessOverviewView(APIView):
-    """
-    Combines:
-    - Daily metrics
-    - All country snapshots
-    - All monthly summaries
-
-    Front-end calls ONE endpoint → dashboard loads instantly.
-    """
-
+class CountryMetricsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        daily = DailyBusinessMetrics.objects.order_by("-date").first()
-        country = CountryUserMetrics.objects.order_by("-date")
-        monthly = MonthlySummary.objects.order_by("-month")
+        qs = CountryUserMetrics.objects.order_by("-date")
+        return Response(CountryUserMetricsSerializer(qs, many=True).data)
 
+
+class BusinessOverviewView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
         data = {
-            "daily": DailyBusinessMetricsSerializer(daily).data,
-            "country": CountryUserMetricsSerializer(country, many=True).data,
-            "monthly": MonthlySummarySerializer(monthly, many=True).data,
+            "daily":
+            DailyBusinessMetricsSerializer(
+                DailyBusinessMetrics.objects.order_by("-date").first()).data,
+            "country":
+            CountryUserMetricsSerializer(
+                CountryUserMetrics.objects.order_by("-date"), many=True).data,
+            "weekly":
+            WeeklySummarySerializer(
+                WeeklySummary.objects.order_by("-week_start"), many=True).data,
+            "monthly":
+            MonthlySummarySerializer(MonthlySummary.objects.order_by("-month"),
+                                     many=True).data,
         }
-
-        serializer = BusinessOverviewSerializer(data)
-        return Response(serializer.data)
+        return Response(BusinessOverviewSerializer(data).data)

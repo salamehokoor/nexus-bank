@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import DailyBusinessMetrics, CountryUserMetrics, MonthlySummary
+from .models import DailyBusinessMetrics, CountryUserMetrics, MonthlySummary, WeeklySummary
 
 
 class DailyBusinessMetricsSerializer(serializers.ModelSerializer):
@@ -23,8 +23,15 @@ class MonthlySummarySerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class WeeklySummarySerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = WeeklySummary
+        fields = "__all__"
+
+
 class BusinessOverviewSerializer(serializers.Serializer):
-    """Combined backend → one endpoint for dashboard."""
     daily = DailyBusinessMetricsSerializer()
     country = CountryUserMetricsSerializer(many=True)
+    weekly = WeeklySummarySerializer(many=True)
     monthly = MonthlySummarySerializer(many=True)
