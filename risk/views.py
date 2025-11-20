@@ -1,11 +1,28 @@
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, CreateAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
 from .models import Incident, LoginEvent
-from .serializers import IncidentSerializer, LoginEventSerializer
+from .serializers import IncidentSerializer, LoginEventSerializer, UnlockIPSerializer
+from axes.utils import reset
+
+
+class AxesUnlockIPView(CreateAPIView):
+    #permission_classes = [IsAdminUser]
+    serializer_class = UnlockIPSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        ip = serializer.validated_data["ip"]
+
+        # Correct kwarg = ip
+        reset(ip=ip)
+
+        return Response({"detail": f"Lockouts cleared for IP {ip}."})
 
 
 class IncidentListView(ListAPIView):

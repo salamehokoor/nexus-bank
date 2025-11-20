@@ -325,3 +325,4 @@ AXES_FAILURE_LIMIT = 5  # lock after 5 tries
 AXES_LOCK_OUT_AT_FAILURE = True
 AXES_COOLOFF_TIME = 1  # hours before unlock
 AXES_ENABLED = True
+AXES_LOCKOUT_PARAMETERS = ['ip_address']
