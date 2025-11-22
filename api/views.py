@@ -11,6 +11,10 @@ from .serializers import InternalTransferSerializer, ExternalTransferSerializer,
 from django.shortcuts import redirect
 from rest_framework_simplejwt.tokens import RefreshToken
 from risk.rules import high_value_transfer
+from django.contrib.auth import get_user_model
+from rest_framework.views import APIView
+
+User = get_user_model()
 
 
 def social_login_complete(request):
@@ -33,6 +37,21 @@ def social_login_complete(request):
 
 
 ###
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        # Mark offline
+        User.objects.filter(pk=request.user.pk).update(is_online=False)
+
+        # OPTIONAL: Blacklist refresh token
+        # Only if using JWT blacklist:
+        # request.auth.blacklist()
+
+        return Response({"detail": "Logged out successfully."})
+
+
+##
 class AccountsListCreateView(generics.ListCreateAPIView):
     """
     GET /accounts

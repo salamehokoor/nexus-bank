@@ -7,6 +7,9 @@ from drf_spectacular.views import (
     SpectacularRedocView,
 )
 
+from api.views import LogoutView
+from risk.views import LoggingTokenObtainPairView
+
 urlpatterns = [
     # Admin
     # path('grappelli/', include('grappelli.urls')),
@@ -21,6 +24,10 @@ urlpatterns = [
     #/accounts/google/login/callback/
 
     # Djoser / JWT routes
+    path("auth/jwt/create/",
+         LoggingTokenObtainPairView.as_view(),
+         name="jwt-create-logging"),
+    path("auth/logout/", LogoutView.as_view(), name="logout"),
     path('auth/', include('djoser.urls')),
     path('auth/', include('djoser.urls.authtoken')),
     path('auth/', include('djoser.urls.jwt')),

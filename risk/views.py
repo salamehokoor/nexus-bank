@@ -1,12 +1,52 @@
+# risk/views.py
 from rest_framework.generics import ListAPIView, CreateAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter
-from .models import Incident, LoginEvent
-from .serializers import IncidentSerializer, LoginEventSerializer, UnlockIPSerializer
+
 from axes.utils import reset
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView  # 👈 you were missing this
+
+from .models import Incident, LoginEvent
+from .serializers import (
+    IncidentSerializer,
+    LoginEventSerializer,
+    UnlockIPSerializer,
+)
+from .auth_logging import log_auth_event
+
+
+# -------------------------------------------------------------------
+#  JWT login with logging
+# -------------------------------------------------------------------
+class LoggingTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """
+    Wraps the normal SimpleJWT serializer to log *successful* logins.
+    Failed logins are still captured by the django_login_failed signal.
+    """
+
+    def validate(self, attrs):
+        # This calls authenticate() and sets self.user on success
+        data = super().validate(attrs)
+
+        request = self.context["request"]
+
+        # Centralised logging helper – this is your function
+        log_auth_event(
+            request=request,
+            user=self.user,
+            successful=True,
+            source="jwt",  # or "password" / whatever label you prefer
+        )
+
+        return data
+
+
+class LoggingTokenObtainPairView(TokenObtainPairView):
+    serializer_class = LoggingTokenObtainPairSerializer
 
 
 class AxesUnlockIPView(CreateAPIView):

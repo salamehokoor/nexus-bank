@@ -57,7 +57,7 @@ curl -X POST http://127.0.0.1:8000/auth/jwt/create/ \
   -H "X-Forwarded-For: 92.253.28.65" \
   -d '{"email":"salamehokoor@gmail.com","password":"test@test"}'
 ###
-curl -X POST http://127.0.0.1:8000/auth/jwt/create/ \
+curl -X POST 'https://api.nexus-banking.com/auth/jwt/create/' \
   -H "Content-Type: application/json" \
   -H "X-Forwarded-For: 154.45.12.88" \
   -d '{"email":"salamehokoor@gmail.com","password":"test@test"}'
