@@ -1,85 +1,55 @@
 from django.utils.timezone import now
+from django.db.models import Sum, Avg, Count, F
 from django.db import transaction
-from django.db.models import Count, Sum, Avg, F
+from datetime import timedelta
 
-from api.models import Transaction, BillPayment, Account, User
+from api.models import Transaction, BillPayment, User
 from risk.models import Incident, LoginEvent
-from .models import DailyBusinessMetrics, CountryUserMetrics
+from .models import DailyBusinessMetrics, CountryUserMetrics, WeeklySummary, MonthlySummary
 
 # =====================================================
-#  DAILY BUSINESS METRICS (Main KPI Aggregation)
+# DAILY SUMMARY
 # =====================================================
 
 
 def compute_daily_business_metrics():
-    """Compute daily KPIs and store them in DailyBusinessMetrics."""
-
     today = now().date()
 
     with transaction.atomic():
         metrics, created = DailyBusinessMetrics.objects.get_or_create(
             date=today)
 
-        # =====================================================
-        # USERS
-        # =====================================================
-
-        # New users today (use date_joined, not created_at)
+        # Users
         metrics.new_users = User.objects.filter(
             date_joined__date=today).count()
-
         metrics.total_users = User.objects.count()
-
-        # Real active users: users who logged in successfully today
         metrics.active_users = LoginEvent.objects.filter(
             successful=True,
-            timestamp__date=today).values('user').distinct().count()
+            timestamp__date=today).values("user").distinct().count()
 
-        # =====================================================
-        # TRANSACTIONS
-        # =====================================================
-
-        tx_qs = Transaction.objects.filter(created_at__date=today)
-
-        metrics.total_transactions = tx_qs.count()
-
-        metrics.total_transferred_amount = (
-            tx_qs.aggregate(total=Sum("amount"))["total"] or 0)
-
-        metrics.avg_transaction_value = (
-            tx_qs.aggregate(avg=Avg("amount"))["avg"] or 0)
-
-        # FX volume = amount where sender and receiver currency differ
-        metrics.fx_volume = (tx_qs.exclude(sender_account__currency=F(
+        # Transactions
+        tx = Transaction.objects.filter(created_at__date=today)
+        metrics.total_transactions = tx.count()
+        metrics.total_transferred_amount = tx.aggregate(
+            total=Sum("amount"))["total"] or 0
+        metrics.avg_transaction_value = tx.aggregate(
+            avg=Avg("amount"))["avg"] or 0
+        metrics.fx_volume = tx.exclude(sender_account__currency=F(
             "receiver_account__currency")).aggregate(
-                total=Sum("amount"))["total"] or 0)
+                total=Sum("amount"))["total"] or 0
 
-        # =====================================================
-        # BILL PAYMENTS
-        # =====================================================
+        # Bill payments
+        bp = BillPayment.objects.filter(created_at__date=today)
+        metrics.bill_payments_count = bp.count()
+        metrics.bill_payments_amount = bp.aggregate(
+            total=Sum("amount"))["total"] or 0
 
-        bp_qs = BillPayment.objects.filter(created_at__date=today)
-
-        metrics.bill_payments_count = bp_qs.count()
-
-        metrics.bill_payments_amount = (
-            bp_qs.aggregate(total=Sum("amount"))["total"] or 0)
-
-        # =====================================================
-        # PROFIT (placeholder logic)
-        # =====================================================
-
-        # Simple version: incoming transfer volume
-        # Later: You can replace this with real fee/profit model
+        # Profit placeholder
         metrics.profit = metrics.total_transferred_amount
 
-        # =====================================================
-        # SECURITY
-        # =====================================================
-
+        # Security
         metrics.failed_logins = LoginEvent.objects.filter(
             successful=False, timestamp__date=today).count()
-
         metrics.incidents = Incident.objects.filter(
             timestamp__date=today).count()
 
@@ -87,24 +57,80 @@ def compute_daily_business_metrics():
 
 
 # =====================================================
-#  USER COUNTRY SNAPSHOT (TEMPORARY DEFAULT)
+# WEEKLY SUMMARY
+# =====================================================
+
+
+def compute_weekly_summary():
+    today = now().date()
+    week_start = today - timedelta(days=today.weekday())  # Monday
+    week_end = week_start + timedelta(days=6)
+
+    with transaction.atomic():
+        summary, created = WeeklySummary.objects.get_or_create(
+            week_start=week_start, week_end=week_end)
+
+        users = User.objects.filter(
+            date_joined__date__range=[week_start, week_end])
+        tx = Transaction.objects.filter(
+            created_at__date__range=[week_start, week_end])
+        bp = BillPayment.objects.filter(
+            created_at__date__range=[week_start, week_end])
+
+        summary.new_users = users.count()
+        summary.total_transactions = tx.count()
+        summary.total_transferred_amount = tx.aggregate(
+            total=Sum("amount"))["total"] or 0
+        summary.bill_payments_amount = bp.aggregate(
+            total=Sum("amount"))["total"] or 0
+        summary.profit = summary.total_transferred_amount
+
+        summary.save()
+
+
+# =====================================================
+# MONTHLY SUMMARY
+# =====================================================
+
+
+def compute_monthly_summary():
+    today = now().date()
+    month_start = today.replace(day=1)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+    month_end = next_month - timedelta(days=1)
+
+    with transaction.atomic():
+        summary, created = MonthlySummary.objects.get_or_create(
+            month=month_start)
+
+        users = User.objects.filter(
+            date_joined__date__range=[month_start, month_end])
+        tx = Transaction.objects.filter(
+            created_at__date__range=[month_start, month_end])
+        bp = BillPayment.objects.filter(
+            created_at__date__range=[month_start, month_end])
+
+        summary.new_users = users.count()
+        summary.total_transactions = tx.count()
+        summary.total_transferred_amount = tx.aggregate(
+            total=Sum("amount"))["total"] or 0
+        summary.bill_payments_amount = bp.aggregate(
+            total=Sum("amount"))["total"] or 0
+        summary.profit = summary.total_transferred_amount
+
+        summary.save()
+
+
+# =====================================================
+# COUNTRY SNAPSHOT
 # =====================================================
 
 
 def compute_country_snapshot():
-    """
-    Store user distribution by country.
-    TEMP: all users = Jordan until profile.country exists.
-    """
-
     today = now().date()
-
-    # Clear old for today
     CountryUserMetrics.objects.filter(date=today).delete()
 
-    total_users = User.objects.count()
-
-    # Default assumption: All users from Jordan for now
+    # TEMPORARY: every user = Jordan
     CountryUserMetrics.objects.create(date=today,
                                       country="Jordan",
-                                      count=total_users)
+                                      count=User.objects.count())
