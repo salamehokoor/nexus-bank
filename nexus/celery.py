@@ -2,9 +2,9 @@ from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "nexus_bank.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "nexus.settings")
 
-app = Celery("nexus_bank")
+app = Celery("nexus")
 
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
