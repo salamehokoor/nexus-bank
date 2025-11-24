@@ -76,7 +76,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
+    #celery
+    "django_celery_beat",
     # Auth & accounts
     "django.contrib.sites",
     "allauth",
@@ -327,3 +328,12 @@ AXES_LOCK_OUT_AT_FAILURE = True
 AXES_COOLOFF_TIME = 1  # hours before unlock
 AXES_ENABLED = True
 AXES_LOCKOUT_PARAMETERS = ['ip_address']
+
+#celery config
+CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+
+CELERY_TIMEZONE = "Asia/Amman"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
