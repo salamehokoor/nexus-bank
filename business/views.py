@@ -1,12 +1,20 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
 from rest_framework import permissions
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import DailyBusinessMetrics, CountryUserMetrics, MonthlySummary, WeeklySummary
-from .serializers import (DailyBusinessMetricsSerializer,
-                          CountryUserMetricsSerializer,
-                          MonthlySummarySerializer, WeeklySummarySerializer,
-                          BusinessOverviewSerializer)
+from .models import (
+    DailyBusinessMetrics,
+    CountryUserMetrics,
+    WeeklySummary,
+    MonthlySummary,
+)
+from .serializers import (
+    DailyBusinessMetricsSerializer,
+    CountryUserMetricsSerializer,
+    WeeklySummarySerializer,
+    MonthlySummarySerializer,
+    BusinessOverviewSerializer,
+)
 
 
 class DailyMetricsView(APIView):
@@ -14,6 +22,9 @@ class DailyMetricsView(APIView):
 
     def get(self, request):
         obj = DailyBusinessMetrics.objects.order_by("-date").first()
+        # if no metrics yet, return empty dict
+        if not obj:
+            return Response({})
         return Response(DailyBusinessMetricsSerializer(obj).data)
 
 
@@ -42,21 +53,36 @@ class CountryMetricsView(APIView):
 
 
 class BusinessOverviewView(APIView):
+    """
+    Single endpoint for React dashboard.
+
+    Returns:
+    {
+      "daily": {...} or null,
+      "weekly": [...],
+      "monthly": [...],
+      "country": [...]
+    }
+    """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        data = {
+        daily_obj = DailyBusinessMetrics.objects.order_by("-date").first()
+        weekly_qs = WeeklySummary.objects.order_by("-week_start")
+        monthly_qs = MonthlySummary.objects.order_by("-month")
+        country_qs = CountryUserMetrics.objects.order_by("-date")
+
+        payload = {
             "daily":
-            DailyBusinessMetricsSerializer(
-                DailyBusinessMetrics.objects.order_by("-date").first()).data,
-            "country":
-            CountryUserMetricsSerializer(
-                CountryUserMetrics.objects.order_by("-date"), many=True).data,
+            DailyBusinessMetricsSerializer(daily_obj).data
+            if daily_obj else None,
             "weekly":
-            WeeklySummarySerializer(
-                WeeklySummary.objects.order_by("-week_start"), many=True).data,
+            WeeklySummarySerializer(weekly_qs, many=True).data,
             "monthly":
-            MonthlySummarySerializer(MonthlySummary.objects.order_by("-month"),
-                                     many=True).data,
+            MonthlySummarySerializer(monthly_qs, many=True).data,
+            "country":
+            CountryUserMetricsSerializer(country_qs, many=True).data,
         }
-        return Response(BusinessOverviewSerializer(data).data)
+
+        return Response(BusinessOverviewSerializer(payload).data)

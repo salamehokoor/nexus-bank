@@ -7,28 +7,38 @@ User = get_user_model()
 class DailyBusinessMetrics(models.Model):
     date = models.DateField(unique=True)
 
+    # --- User metrics ---
     new_users = models.IntegerField(default=0)
     total_users = models.IntegerField(default=0)
     active_users = models.IntegerField(default=0)
 
+    # --- Transaction metrics ---
     total_transactions = models.IntegerField(default=0)
-    total_transferred_amount = models.DecimalField(max_digits=14,
-                                                   decimal_places=2,
-                                                   default=0)
-    avg_transaction_value = models.DecimalField(max_digits=14,
-                                                decimal_places=2,
-                                                default=0)
+    total_transferred_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
+    avg_transaction_value = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
 
+    # --- Bill payments ---
     bill_payments_count = models.IntegerField(default=0)
-    bill_payments_amount = models.DecimalField(max_digits=14,
-                                               decimal_places=2,
-                                               default=0)
+    bill_payments_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
 
+    # --- Profit / risk ---
     profit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-
     failed_logins = models.IntegerField(default=0)
     incidents = models.IntegerField(default=0)
 
+    # --- FX volume ---
     fx_volume = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
     updated_at = models.DateTimeField(auto_now=True)
@@ -58,12 +68,16 @@ class WeeklySummary(models.Model):
 
     new_users = models.IntegerField(default=0)
     total_transactions = models.IntegerField(default=0)
-    total_transferred_amount = models.DecimalField(max_digits=14,
-                                                   decimal_places=2,
-                                                   default=0)
-    bill_payments_amount = models.DecimalField(max_digits=14,
-                                               decimal_places=2,
-                                               default=0)
+    total_transferred_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
+    bill_payments_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
     profit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
     updated_at = models.DateTimeField(auto_now=True)
@@ -73,16 +87,21 @@ class WeeklySummary(models.Model):
 
 
 class MonthlySummary(models.Model):
+    # store as first day of month
     month = models.DateField(unique=True)
 
     new_users = models.IntegerField(default=0)
     total_transactions = models.IntegerField(default=0)
-    total_transferred_amount = models.DecimalField(max_digits=14,
-                                                   decimal_places=2,
-                                                   default=0)
-    bill_payments_amount = models.DecimalField(max_digits=14,
-                                               decimal_places=2,
-                                               default=0)
+    total_transferred_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
+    bill_payments_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+    )
     profit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
 
     updated_at = models.DateTimeField(auto_now=True)
