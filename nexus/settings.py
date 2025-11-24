@@ -330,8 +330,8 @@ AXES_ENABLED = True
 AXES_LOCKOUT_PARAMETERS = ['ip_address']
 
 #celery config
-CELERY_BROKER_URL = "redis://localhost:6379/0"
-CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/1"
 
 CELERY_TIMEZONE = "Asia/Amman"
 CELERY_ACCEPT_CONTENT = ["json"]
