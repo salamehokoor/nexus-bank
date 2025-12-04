@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import requests
 from django.conf import settings
 
@@ -6,17 +8,16 @@ from django.conf import settings
 IPINFO_TOKEN = getattr(settings, "IPINFO_TOKEN", "")
 
 
-def get_country_from_ip(ip: str) -> str:
+@lru_cache(maxsize=512)
+def _lookup_country(ip: str) -> str:
     if not ip:
         return ""
 
-    lookups = []
-
     # Prefer ipinfo if a token is configured; fall back to the public endpoint.
+    lookups = []
     if IPINFO_TOKEN:
         lookups.append(f"https://ipinfo.io/{ip}?token={IPINFO_TOKEN}")
     lookups.append(f"https://ipinfo.io/{ip}")
-
     # Secondary fallback (no token required).
     lookups.append(f"https://ipapi.co/{ip}/json/")
 
@@ -34,7 +35,35 @@ def get_country_from_ip(ip: str) -> str:
         except Exception:
             continue
 
+    # Final fallback: reuse the most recent non-empty country we have stored.
+    try:
+        from .models import Incident, LoginEvent  # local import to avoid cycles
+
+        recent = (
+            Incident.objects.filter(ip=ip)
+            .exclude(country="")
+            .order_by("-timestamp")
+            .first()
+        )
+        if recent and recent.country:
+            return recent.country
+
+        recent_login = (
+            LoginEvent.objects.filter(ip=ip)
+            .exclude(country="")
+            .order_by("-timestamp")
+            .first()
+        )
+        if recent_login and recent_login.country:
+            return recent_login.country
+    except Exception:
+        pass
+
     return ""
+
+
+def get_country_from_ip(ip: str) -> str:
+    return _lookup_country(ip)
 
 
 def _get_ip_from_request(request):
