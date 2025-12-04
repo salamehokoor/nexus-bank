@@ -1,261 +1,147 @@
-from django.conf import settings
-from django.shortcuts import get_object_or_404
-from rest_framework import generics, permissions
-from .models import Account, Card
-from .serializers import AccountSerializer, CardSerializer
+from datetime import datetime
+
+from django.utils.cache import patch_cache_control
+from rest_framework import permissions, status
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
-from rest_framework import status
-from django.db.models import Q
-from .models import Transaction, BillPayment
-from .serializers import InternalTransferSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
-from django.shortcuts import redirect
-from rest_framework_simplejwt.tokens import RefreshToken
-from risk.transaction_logging import (
-    log_transaction_event,
-    log_failed_transfer_attempt,
-)
-from rest_framework.exceptions import ValidationError
-from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 
-User = get_user_model()
+from .models import (
+    ActiveUserWindow,
+    CountryUserMetrics,
+    CurrencyMetrics,
+    DailyBusinessMetrics,
+    MonthlySummary,
+    WeeklySummary,
+)
+from .serializers import (
+    ActiveUserWindowSerializer,
+    BusinessOverviewSerializer,
+    CountryUserMetricsSerializer,
+    CurrencyMetricsSerializer,
+    DailyBusinessMetricsSerializer,
+    MonthlySummarySerializer,
+    WeeklySummarySerializer,
+)
 
 
-def social_login_complete(request):
-    """
-    Called after allauth finishes Google login.
-    request.user is already authenticated at this point.
-    We generate JWTs and redirect to the frontend with them.
-    """
-    if not request.user.is_authenticated:
-        return redirect(
-            f"{settings.FRONTEND_URL}/auth/social/error?reason=not_authenticated"
-        )
-
-    refresh = RefreshToken.for_user(request.user)
-    access = str(refresh.access_token)
-
-    redirect_url = (f"{settings.FRONTEND_URL}/auth/social/success"
-                    f"?access={access}&refresh={refresh}")
-    return redirect(redirect_url)
+def _parse_date_param(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).date()
+    except ValueError:
+        return None
 
 
-###
-class LogoutView(APIView):
-    schema = None  # avoid schema guess issues in docs
+class BasePaginatedView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = LimitOffsetPagination
+
+    def paginate(self, request, queryset, serializer_class):
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        data = serializer_class(page, many=True).data
+        return paginator.get_paginated_response(data)
+
+
+class DailyMetricsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request):
-        # Mark offline
-        User.objects.filter(pk=request.user.pk).update(is_online=False)
+    def get(self, request):
+        target_date = _parse_date_param(request.query_params.get("date"))
+        qs = DailyBusinessMetrics.objects
+        obj = qs.filter(date=target_date).first(
+        ) if target_date else qs.order_by("-date").first()
+        if not obj:
+            return Response({}, status=status.HTTP_204_NO_CONTENT)
+        resp = Response(DailyBusinessMetricsSerializer(obj).data)
+        patch_cache_control(resp, private=True, max_age=60)
+        return resp
 
-        # OPTIONAL: Blacklist refresh token
-        # Only if using JWT blacklist:
-        # request.auth.blacklist()
 
-        return Response({"detail": "Logged out successfully."})
+class WeeklySummaryView(BasePaginatedView):
+    def get(self, request):
+        week_param = _parse_date_param(request.query_params.get("week"))
+        qs = WeeklySummary.objects.order_by("-week_start")
+        if week_param:
+            qs = qs.filter(week_start=week_param)
+        return self.paginate(request, qs, WeeklySummarySerializer)
 
 
-##
-class AccountsListCreateView(generics.ListCreateAPIView):
+class MonthlySummaryView(BasePaginatedView):
+    def get(self, request):
+        month_param = _parse_date_param(request.query_params.get("month"))
+        qs = MonthlySummary.objects.order_by("-month")
+        if month_param:
+            qs = qs.filter(month=month_param)
+        return self.paginate(request, qs, MonthlySummarySerializer)
+
+
+class CountryMetricsView(BasePaginatedView):
+    def get(self, request):
+        date_param = _parse_date_param(request.query_params.get("date"))
+        qs = CountryUserMetrics.objects.order_by("-date", "country")
+        if date_param:
+            qs = qs.filter(date=date_param)
+        return self.paginate(request, qs, CountryUserMetricsSerializer)
+
+
+class CurrencyMetricsView(BasePaginatedView):
+    def get(self, request):
+        date_param = _parse_date_param(request.query_params.get("date"))
+        qs = CurrencyMetrics.objects.order_by("-date", "currency")
+        if date_param:
+            qs = qs.filter(date=date_param)
+        return self.paginate(request, qs, CurrencyMetricsSerializer)
+
+
+class ActiveUsersView(BasePaginatedView):
+    def get(self, request):
+        date_param = _parse_date_param(request.query_params.get("date"))
+        window = request.query_params.get("window")
+        qs = ActiveUserWindow.objects.order_by("-date")
+        if date_param:
+            qs = qs.filter(date=date_param)
+        if window:
+            qs = qs.filter(window=window)
+        return self.paginate(request, qs, ActiveUserWindowSerializer)
+
+
+class BusinessOverviewView(APIView):
     """
-    GET /accounts
-    POST /accounts
+    Aggregated payload for dashboards with caching hints.
     """
-    serializer_class = AccountSerializer
 
     permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        qs = Account.objects.filter(user=self.request.user)
+    def get(self, request):
+        daily_date = _parse_date_param(request.query_params.get("date"))
+        daily_obj = (DailyBusinessMetrics.objects.filter(
+            date=daily_date).first() if daily_date else
+                     DailyBusinessMetrics.objects.order_by("-date").first())
+        weekly_qs = WeeklySummary.objects.order_by("-week_start")
+        monthly_qs = MonthlySummary.objects.order_by("-month")
+        country_qs = CountryUserMetrics.objects.order_by("-date")
+        currency_qs = CurrencyMetrics.objects.order_by("-date")
+        active_qs = ActiveUserWindow.objects.order_by("-date")
 
-        acc_type = self.request.query_params.get("type")
-        if acc_type:
-            qs = qs.filter(type=acc_type)
-        #GET /accounts?type=Savings --> Lists only savings accounts
+        payload = {
+            "daily":
+            DailyBusinessMetricsSerializer(daily_obj).data
+            if daily_obj else None,
+            "weekly":
+            WeeklySummarySerializer(weekly_qs, many=True).data,
+            "monthly":
+            MonthlySummarySerializer(monthly_qs, many=True).data,
+            "country":
+            CountryUserMetricsSerializer(country_qs, many=True).data,
+            "currency":
+            CurrencyMetricsSerializer(currency_qs, many=True).data,
+            "active":
+            ActiveUserWindowSerializer(active_qs, many=True).data,
+        }
 
-        ordering = self.request.query_params.get("ordering")
-        if ordering in ("balance", "-balance", "created_at", "-created_at"):
-            qs = qs.order_by(ordering)
-        else:
-            # default ordering: newest to oldest
-            qs = qs.order_by("-created_at")
-        #GET /accounts?ordering=-balance --> Lists all accounts sorted by balance descending
-
-        return qs
-
-    def perform_create(self, serializer):
-        # Force ownership to the authenticated user (ignore any user sent by client)
-        serializer.save(user=self.request.user)
-
-
-class AccountCardsListCreateView(generics.ListCreateAPIView):
-    """
-    GET  /accounts/<account_number>/cards/  -> list cards for that account
-    POST /accounts/<account_number>/cards/  -> create a card for that account
-    """
-    serializer_class = CardSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        acct_num = self.kwargs["account_number"]
-        get_object_or_404(Account,
-                          account_number=acct_num,
-                          user=self.request.user)
-        return Card.objects.filter(account_id=acct_num).order_by("-created_at")
-        # return only cards linked to that account
-
-    def perform_create(self, serializer):
-        acct_num = self.kwargs["account_number"]
-        account = get_object_or_404(Account,
-                                    account_number=acct_num,
-                                    user=self.request.user)
-        serializer.save(account=account)
-
-
-class InternalTransferListCreateView(generics.ListCreateAPIView):
-    """
-    GET  /api/transfers/internal/     -> list internal transfers (mine -> mine)
-    POST /api/transfers/internal/     -> create internal transfer
-    """
-    permission_classes = [permissions.IsAuthenticated]
-
-    # POST uses the input serializer; GET uses the read serializer
-    def get_serializer_class(self):
-        return InternalTransferSerializer if self.request.method == "POST" else TransactionSerializer
-
-    def get_queryset(self):
-        u = self.request.user
-        qs = Transaction.objects.filter(
-            sender_account__user=u,
-            receiver_account__user=u,
-        )
-        # optional filters
-        account_number = self.request.query_params.get("account_number")
-        if account_number:
-            qs = qs.filter(
-                Q(sender_account_number=account_number)
-                | Q(receiver_account_number=account_number))
-        date_from = self.request.query_params.get("from")
-        if date_from:
-            qs = qs.filter(created_at__date__gte=date_from)
-        date_to = self.request.query_params.get("to")
-        if date_to:
-            qs = qs.filter(created_at__date__lte=date_to)
-
-        ordering = self.request.query_params.get("ordering")
-        return qs.order_by(ordering) if ordering in (
-            "created_at", "-created_at", "amount",
-            "-amount") else qs.order_by("-created_at")
-
-    def create(self, request, *args, **kwargs):
-        s = self.get_serializer(data=request.data)
-        try:
-            s.is_valid(raise_exception=True)
-            tx = s.save()
-        except ValidationError as exc:
-            log_failed_transfer_attempt(
-                request=request,
-                user=request.user,
-                errors=exc.detail,
-                amount=request.data.get("amount"),
-                receiver_account=request.data.get("receiver_account"),
-            )
-            raise
-
-        # 🔥 send this transfer to the risk engine
-        log_transaction_event(request=request,
-                              user=request.user,
-                              transaction=tx)
-
-        return Response(
-            TransactionSerializer(tx, context={
-                "request": request
-            }).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class ExternalTransferListCreateView(generics.ListCreateAPIView):
-    """
-    GET  /api/transfers/external/     -> list outgoing external transfers (mine -> others)
-    POST /api/transfers/external/     -> create external transfer
-    """
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_serializer_class(self):
-        return ExternalTransferSerializer if self.request.method == "POST" else TransactionSerializer
-
-    def get_queryset(self):
-        u = self.request.user
-        qs = Transaction.objects.filter(sender_account__user=u).exclude(
-            receiver_account__user=u)
-        # optional filters
-        sender_id = self.request.query_params.get("sender_id")
-        if sender_id:
-            qs = qs.filter(sender_account_number=sender_id)
-        date_from = self.request.query_params.get("from")
-        if date_from:
-            qs = qs.filter(created_at__date__gte=date_from)
-        date_to = self.request.query_params.get("to")
-        if date_to:
-            qs = qs.filter(created_at__date__lte=date_to)
-
-        ordering = self.request.query_params.get("ordering")
-        return qs.order_by(ordering) if ordering in (
-            "created_at", "-created_at", "amount",
-            "-amount") else qs.order_by("-created_at")
-
-    def create(self, request, *args, **kwargs):
-        s = self.get_serializer(data=request.data)
-        try:
-            s.is_valid(raise_exception=True)
-            tx = s.save()
-        except ValidationError as exc:
-            log_failed_transfer_attempt(
-                request=request,
-                user=request.user,
-                errors=exc.detail,
-                amount=request.data.get("amount"),
-                receiver_account=request.data.get("receiver_account"),
-            )
-            raise
-
-        # 🔥 also evaluate external transfers for high-value risk
-        log_transaction_event(request=request,
-                              user=request.user,
-                              transaction=tx)
-
-        return Response(
-            TransactionSerializer(tx, context={
-                "request": request
-            }).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class BillPaymentListCreateView(generics.ListCreateAPIView):
-    serializer_class = BillPaymentSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        user = getattr(self.request, "user", None)
-        #get the value of this attribute if it exists, otherwise return a default value.
-        if not getattr(user, "is_authenticated", False):
-            return BillPayment.objects.none()
-        return BillPayment.objects.filter(user=user)
-
-    def perform_create(self, serializer):
-        serializer.save()  # user is injected by the serializer
-
-
-class BillPaymentDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = BillPaymentSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        user = getattr(self.request, "user", None)
-        #get the value of this attribute if it exists, otherwise return a default value.
-        if not getattr(user, "is_authenticated", False):
-            return BillPayment.objects.none()
-        return BillPayment.objects.filter(user=user)
+        resp = Response(BusinessOverviewSerializer(payload).data)
+        patch_cache_control(resp, private=True, max_age=60)
+        return resp

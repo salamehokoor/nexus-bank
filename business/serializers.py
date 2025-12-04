@@ -10,36 +10,42 @@ from .models import (
 
 
 class DailyBusinessMetricsSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = DailyBusinessMetrics
         fields = "__all__"
 
 
 class CountryUserMetricsSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = CountryUserMetrics
         fields = "__all__"
 
 
 class CurrencyMetricsSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = CurrencyMetrics
         fields = "__all__"
 
 
 class WeeklySummarySerializer(serializers.ModelSerializer):
+
     class Meta:
         model = WeeklySummary
         fields = "__all__"
 
 
 class MonthlySummarySerializer(serializers.ModelSerializer):
+
     class Meta:
         model = MonthlySummary
         fields = "__all__"
 
 
 class ActiveUserWindowSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = ActiveUserWindow
         fields = "__all__"
