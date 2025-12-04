@@ -46,12 +46,14 @@ class BasePaginatedView(APIView):
 
 
 class DailyMetricsView(APIView):
+    schema = None  # exclude from schema to avoid doc errors
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         target_date = _parse_date_param(request.query_params.get("date"))
         qs = DailyBusinessMetrics.objects
-        obj = qs.filter(date=target_date).first() if target_date else qs.order_by("-date").first()
+        obj = qs.filter(date=target_date).first(
+        ) if target_date else qs.order_by("-date").first()
         if not obj:
             return Response({}, status=status.HTTP_204_NO_CONTENT)
         resp = Response(DailyBusinessMetricsSerializer(obj).data)
@@ -59,7 +61,9 @@ class DailyMetricsView(APIView):
         return resp
 
 
-class WeeklySummaryView(BasePaginatedView):
+class WeeklySummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request):
         week_param = _parse_date_param(request.query_params.get("week"))
         qs = WeeklySummary.objects.order_by("-week_start")
@@ -68,34 +72,18 @@ class WeeklySummaryView(BasePaginatedView):
         return self.paginate(request, qs, WeeklySummarySerializer)
 
 
-class MonthlySummaryView(BasePaginatedView):
+class MonthlySummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request):
         month_param = _parse_date_param(request.query_params.get("month"))
         qs = MonthlySummary.objects.order_by("-month")
-        if month_param:
-            qs = qs.filter(month=month_param)
-        return self.paginate(request, qs, MonthlySummarySerializer)
+        return Response(MonthlySummarySerializer(qs, many=True).data)
 
 
-class CountryMetricsView(BasePaginatedView):
-    def get(self, request):
-        date_param = _parse_date_param(request.query_params.get("date"))
-        qs = CountryUserMetrics.objects.order_by("-date", "country")
-        if date_param:
-            qs = qs.filter(date=date_param)
-        return self.paginate(request, qs, CountryUserMetricsSerializer)
+class CountryMetricsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
 
-
-class CurrencyMetricsView(BasePaginatedView):
-    def get(self, request):
-        date_param = _parse_date_param(request.query_params.get("date"))
-        qs = CurrencyMetrics.objects.order_by("-date", "currency")
-        if date_param:
-            qs = qs.filter(date=date_param)
-        return self.paginate(request, qs, CurrencyMetricsSerializer)
-
-
-class ActiveUsersView(BasePaginatedView):
     def get(self, request):
         date_param = _parse_date_param(request.query_params.get("date"))
         window = request.query_params.get("window")
@@ -108,6 +96,7 @@ class ActiveUsersView(BasePaginatedView):
 
 
 class BusinessOverviewView(APIView):
+    schema = None
     """
     Aggregated payload for dashboards with caching hints.
     """
@@ -116,8 +105,9 @@ class BusinessOverviewView(APIView):
 
     def get(self, request):
         daily_date = _parse_date_param(request.query_params.get("date"))
-        daily_obj = (DailyBusinessMetrics.objects.filter(date=daily_date).first()
-                     if daily_date else DailyBusinessMetrics.objects.order_by("-date").first())
+        daily_obj = (DailyBusinessMetrics.objects.filter(
+            date=daily_date).first() if daily_date else
+                     DailyBusinessMetrics.objects.order_by("-date").first())
         weekly_qs = WeeklySummary.objects.order_by("-week_start")
         monthly_qs = MonthlySummary.objects.order_by("-month")
         country_qs = CountryUserMetrics.objects.order_by("-date")
@@ -125,12 +115,19 @@ class BusinessOverviewView(APIView):
         active_qs = ActiveUserWindow.objects.order_by("-date")
 
         payload = {
-            "daily": DailyBusinessMetricsSerializer(daily_obj).data if daily_obj else None,
-            "weekly": WeeklySummarySerializer(weekly_qs, many=True).data,
-            "monthly": MonthlySummarySerializer(monthly_qs, many=True).data,
-            "country": CountryUserMetricsSerializer(country_qs, many=True).data,
-            "currency": CurrencyMetricsSerializer(currency_qs, many=True).data,
-            "active": ActiveUserWindowSerializer(active_qs, many=True).data,
+            "daily":
+            DailyBusinessMetricsSerializer(daily_obj).data
+            if daily_obj else None,
+            "weekly":
+            WeeklySummarySerializer(weekly_qs, many=True).data,
+            "monthly":
+            MonthlySummarySerializer(monthly_qs, many=True).data,
+            "country":
+            CountryUserMetricsSerializer(country_qs, many=True).data,
+            "currency":
+            CurrencyMetricsSerializer(currency_qs, many=True).data,
+            "active":
+            ActiveUserWindowSerializer(active_qs, many=True).data,
         }
 
         resp = Response(BusinessOverviewSerializer(payload).data)

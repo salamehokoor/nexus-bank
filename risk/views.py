@@ -8,7 +8,9 @@ from rest_framework.filters import OrderingFilter
 
 from axes.utils import reset
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from rest_framework_simplejwt.views import TokenObtainPairView  # 👈 you were missing this
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework import status
 
 from .models import Incident, LoginEvent
 from .serializers import (
@@ -16,7 +18,11 @@ from .serializers import (
     LoginEventSerializer,
     UnlockIPSerializer,
 )
-from .auth_logging import log_auth_event
+from .auth_logging import (
+    log_auth_event,
+    log_jwt_refresh_event,
+    log_csrf_failure,
+)
 
 
 # -------------------------------------------------------------------
@@ -47,6 +53,41 @@ class LoggingTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class LoggingTokenObtainPairView(TokenObtainPairView):
     serializer_class = LoggingTokenObtainPairSerializer
+
+
+class LoggingTokenRefreshView(TokenRefreshView):
+    """
+    Wraps SimpleJWT refresh to log successful and failed refresh attempts.
+    """
+
+    def post(self, request, *args, **kwargs):
+        try:
+            response = super().post(request, *args, **kwargs)
+        except (InvalidToken, TokenError) as exc:
+            log_jwt_refresh_event(
+                request=request,
+                user=getattr(request, "user", None),
+                successful=False,
+                failure_reason=str(exc),
+            )
+            raise
+
+        user = getattr(request, "user", None)
+        if response.status_code == status.HTTP_200_OK:
+            log_jwt_refresh_event(
+                request=request,
+                user=user,
+                successful=True,
+            )
+        else:
+            log_jwt_refresh_event(
+                request=request,
+                user=user,
+                successful=False,
+                failure_reason=f"status_{response.status_code}",
+            )
+
+        return response
 
 
 class AxesUnlockIPView(CreateAPIView):
@@ -81,6 +122,7 @@ class LoginEventsListView(ListAPIView):
 
 
 class RiskKPIsView(APIView):
+    schema = None
     permission_classes = [IsAdminUser]
 
     def get(self, request):
@@ -94,3 +136,17 @@ class RiskKPIsView(APIView):
             "unique_attack_ips":
             Incident.objects.values("ip").distinct().count(),
         })
+
+
+def csrf_failure_view(request, reason=""):
+    """
+    Custom CSRF failure handler that logs and returns 403.
+    """
+    log_csrf_failure(request=request, reason=reason)
+    return Response(
+        {
+            "detail": "CSRF verification failed.",
+            "reason": reason
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )

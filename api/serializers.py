@@ -1,5 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
+from drf_spectacular.utils import extend_schema_field
 from .models import Account, Card, User, Transaction, BillPayment, Biller
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
@@ -28,10 +29,12 @@ class CardSerializer(serializers.ModelSerializer):
         model = Card
         fields = ["id", "card_type", "last4", "is_active", "expiration_date"]
 
-    def get_last4(self, obj):
+    @extend_schema_field(serializers.CharField())
+    def get_last4(self, obj) -> str:
         return obj.card_number[-4:]
 
-    def get_expiration_date(self, obj):
+    @extend_schema_field(serializers.DateField())
+    def get_expiration_date(self, obj) -> str:
         value = obj.expiration_date
         # if it's datetime, convert to date; then ISO string
         if hasattr(value, "date"):
@@ -78,13 +81,20 @@ class AccountSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
-    def get_mask(self, obj):
+    @extend_schema_field(serializers.CharField())
+    def get_mask(self, obj) -> str:
         n = len(obj.account_number)
         return f"{'*' * (n - 4)}{obj.account_number[-4:]}"
 
-    def get_card_count(self, obj):
+    @extend_schema_field(serializers.IntegerField())
+    def get_card_count(self, obj) -> int:
         return obj.cards.count()
 
+    class _BalanceDisplaySerializer(serializers.Serializer):
+        currency = serializers.CharField()
+        amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    @extend_schema_field(_BalanceDisplaySerializer)
     def get_display_balance(self, obj):
         """Show balance converted to the user's preferred currency (if different)."""
         request = self.context.get("request")
@@ -133,10 +143,12 @@ class TransactionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
-    def get_sender_account_number(self, obj):
+    @extend_schema_field(serializers.CharField())
+    def get_sender_account_number(self, obj) -> str:
         return obj.sender_account.account_number
 
-    def get_receiver_account_number(self, obj):
+    @extend_schema_field(serializers.CharField())
+    def get_receiver_account_number(self, obj) -> str:
         return obj.receiver_account.account_number
 
 

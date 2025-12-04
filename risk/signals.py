@@ -3,9 +3,11 @@ from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import (user_logged_in, user_login_failed as
                                          django_login_failed, user_logged_out)
+from django.db.models.signals import pre_save, post_save
 from axes.signals import user_locked_out
 
 from .auth_logging import log_auth_event
+from .account_logging import log_account_created
 from .models import Incident
 from .utils import _get_ip_from_request, get_country_from_ip
 
@@ -83,3 +85,63 @@ def handle_user_locked_out(sender, request, username, **kwargs):
 def mark_user_offline(sender, request, user, **kwargs):
     if user and user.is_authenticated:
         User.objects.filter(pk=user.pk).update(is_online=False)
+
+
+@receiver(pre_save, sender=User)
+def _cache_user_state(sender, instance, **kwargs):
+    if not instance.pk:
+        return
+    try:
+        existing = sender.objects.get(pk=instance.pk)
+    except sender.DoesNotExist:
+        return
+    instance._old_is_staff = existing.is_staff
+    instance._old_is_active = existing.is_active
+    instance._old_password = existing.password
+
+
+@receiver(post_save, sender=User)
+def handle_admin_state_changes(sender, instance, created, **kwargs):
+    """
+    Audit admin role creation, deactivation, and password resets.
+    """
+    # New account created (non-admin or admin)
+    if created:
+        log_account_created(request=None, user=instance)
+
+    # Admin role created/granted
+    if instance.is_staff or instance.is_superuser:
+        if created or not getattr(instance, "_old_is_staff",
+                                  instance.is_staff):
+            Incident.objects.create(
+                user=instance,
+                ip=None,
+                country="",
+                event="Admin role created",
+                severity="high",
+                details={"email": getattr(instance, "email", "")},
+            )
+
+    # Admin deactivated a user (active -> inactive)
+    if not created and getattr(instance, "_old_is_active",
+                               True) and not instance.is_active:
+        Incident.objects.create(
+            user=None,
+            ip=None,
+            country="",
+            event="Admin deactivated user",
+            severity="high",
+            details={"email": getattr(instance, "email", "")},
+        )
+
+    # Admin/user password reset (password hash changed)
+    if not created and getattr(instance, "_old_password",
+                               "") != instance.password:
+        Incident.objects.create(
+            user=None,
+            ip=None,
+            country="",
+            event="User password reset",
+            severity="medium",
+            details={"email": getattr(instance, "email", "")},
+        )

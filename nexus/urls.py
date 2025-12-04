@@ -8,7 +8,7 @@ from drf_spectacular.views import (
 )
 
 from api.views import LogoutView
-from risk.views import LoggingTokenObtainPairView
+from risk.views import LoggingTokenObtainPairView, LoggingTokenRefreshView
 
 urlpatterns = [
     # Admin
@@ -27,6 +27,9 @@ urlpatterns = [
     path("auth/jwt/create/",
          LoggingTokenObtainPairView.as_view(),
          name="jwt-create-logging"),
+    path("auth/jwt/refresh/",
+         LoggingTokenRefreshView.as_view(),
+         name="jwt-refresh-logging"),
     path("auth/logout/", LogoutView.as_view(), name="logout"),
     path('auth/', include('djoser.urls')),
     path('auth/', include('djoser.urls.authtoken')),

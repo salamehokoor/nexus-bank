@@ -10,9 +10,14 @@ from .models import Transaction, BillPayment
 from .serializers import InternalTransferSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
 from django.shortcuts import redirect
 from rest_framework_simplejwt.tokens import RefreshToken
-from risk.rules import high_value_transfer
+from risk.transaction_logging import (
+    log_transaction_event,
+    log_failed_transfer_attempt,
+)
+from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
 
 User = get_user_model()
 
@@ -38,6 +43,7 @@ def social_login_complete(request):
 
 ###
 class LogoutView(APIView):
+    schema = None  # avoid schema guess issues in docs
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -145,11 +151,21 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         s = self.get_serializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        tx = s.save()
+        try:
+            s.is_valid(raise_exception=True)
+            tx = s.save()
+        except ValidationError as exc:
+            log_failed_transfer_attempt(
+                request=request,
+                user=request.user,
+                errors=exc.detail,
+                amount=request.data.get("amount"),
+                receiver_account=request.data.get("receiver_account"),
+            )
+            raise
 
         # 🔥 send this transfer to the risk engine
-        high_value_transfer(request, tx)
+        log_transaction_event(request=request, user=request.user, transaction=tx)
 
         return Response(
             TransactionSerializer(tx, context={
@@ -191,11 +207,21 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         s = self.get_serializer(data=request.data)
-        s.is_valid(raise_exception=True)
-        tx = s.save()
+        try:
+            s.is_valid(raise_exception=True)
+            tx = s.save()
+        except ValidationError as exc:
+            log_failed_transfer_attempt(
+                request=request,
+                user=request.user,
+                errors=exc.detail,
+                amount=request.data.get("amount"),
+                receiver_account=request.data.get("receiver_account"),
+            )
+            raise
 
         # 🔥 also evaluate external transfers for high-value risk
-        high_value_transfer(request, tx)
+        log_transaction_event(request=request, user=request.user, transaction=tx)
 
         return Response(
             TransactionSerializer(tx, context={

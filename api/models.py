@@ -2,9 +2,19 @@ from django.db import models, transaction
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from decimal import Decimal
 from django.db.models import Q, F
+from django.utils import timezone
 import uuid
-from datetime import datetime
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
+
+
+def generate_cvv():
+    return str(uuid.uuid4().int)[:3]
+
+
+def default_expiration_date():
+    # five-year expiry from now without freezing defaults in migrations
+    now = timezone.now()
+    return now.date().replace(year=now.year + 5)
 
 
 class BaseModel(models.Model):
@@ -170,13 +180,10 @@ class Card(BaseModel):
         default=generate_card_number,
     )
 
-    cvv = models.CharField(max_length=3,
-                           editable=False,
-                           default=str(uuid.uuid4().int)[:3])
+    cvv = models.CharField(max_length=3, editable=False, default=generate_cvv)
 
-    expiration_date = models.DateField(
-        editable=False,
-        default=datetime.now().replace(year=datetime.now().year + 5))
+    expiration_date = models.DateField(editable=False,
+                                       default=default_expiration_date)
     is_active = models.BooleanField(default=True)
 
     def __str__(self):

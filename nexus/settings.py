@@ -122,6 +122,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    "risk.middleware.AuthorizationLoggingMiddleware",
+    "risk.middleware.ApiKeyLoggingMiddleware",
+    "risk.middleware.ErrorLoggingMiddleware",
 ]
 
 # --------------------
@@ -215,9 +218,9 @@ REST_FRAMEWORK = {
 
     # 🔹 Global throttles
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
-        "rest_framework.throttling.ScopedRateThrottle",
+        "risk.throttling.LoggedAnonRateThrottle",
+        "risk.throttling.LoggedUserRateThrottle",
+        "risk.throttling.LoggedScopedRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         # Global limits
@@ -229,6 +232,15 @@ REST_FRAMEWORK = {
         "password_reset": "3/hour",
     },
 }
+
+# Risk config
+RISK_BLACKLISTED_IPS = os.environ.get(
+    "RISK_BLACKLISTED_IPS",
+    "").split(",") if os.environ.get("RISK_BLACKLISTED_IPS") else []
+RISK_ALLOWED_API_KEYS = os.environ.get(
+    "RISK_ALLOWED_API_KEYS",
+    "").split(",") if os.environ.get("RISK_ALLOWED_API_KEYS") else []
+CSRF_FAILURE_VIEW = "risk.views.csrf_failure_view"
 
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("JWT", ),
@@ -243,21 +255,46 @@ FRONTEND_URL = "https://nexus-banking.com"
 # API Docs (Spectacular)
 # --------------------
 SPECTACULAR_SETTINGS = {
-    "TITLE":
-    "Nexus-Bank API",
-    "DESCRIPTION":
-    "Our Own Digital Bank",
-    "VERSION":
-    "1.0.0",
-    "SERVE_INCLUDE_SCHEMA":
-    False,
-    # Ensure generated server URLs are HTTPS to avoid "not secure" warnings
+    "TITLE": "Nexus-Bank API",
+    "DESCRIPTION": "Our Own Digital Bank",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    # Avoid schema warnings printing to stderr (was causing errors in UI load)
+    "DISABLE_ERRORS_AND_WARNINGS": True,
+    # Default to same-origin so Swagger "Execute" targets the server you are on
+    # (local dev or prod) instead of a hard-coded host.
     "SERVERS": [{
-        "url": "https://api.nexus-banking.com"
-    }, {
-        "url": "http://127.0.0.1:8000/"
+        "url": "/"
     }],
 }
+
+# drf-spectacular sometimes prints warnings during schema generation; on Windows
+# writing those to stderr can raise OSError. Silence the emitter to keep
+# /api/schema working even if warnings are produced.
+try:
+    from drf_spectacular import drainage as _drainage
+    from drf_spectacular import openapi as _openapi
+    import types
+
+    # Force silent mode (mirrors DISABLE_ERRORS_AND_WARNINGS but defensive).
+    _drainage.GENERATOR_STATS.silent = True
+
+    _orig_emit = _drainage.GENERATOR_STATS.emit
+
+    def _safe_emit(self, msg, severity):
+        try:
+            return _orig_emit(msg, severity)
+        except OSError:
+            return None
+
+    _drainage.GeneratorStats.emit = _safe_emit
+    _drainage.GENERATOR_STATS.emit = lambda *args, **kwargs: None
+    _drainage.warn = lambda *args, **kwargs: None
+    _drainage.error = lambda *args, **kwargs: None
+    _openapi.warn = lambda *args, **kwargs: None
+    _openapi.error = lambda *args, **kwargs: None
+except Exception:
+    pass
 
 # --------------------
 # dj-allauth
@@ -362,3 +399,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(hour=2, minute=0, day_of_month="1,8,16,24"),
     },
 }
+
+if DEBUG:
+    # Run Celery tasks synchronously during local development to avoid needing
+    # a running Redis broker.
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True

@@ -1,21 +1,24 @@
 import requests
+from django.conf import settings
 
-IPINFO_TOKEN = "6eb1e5d2d97582"  # DEV ONLY – later put in env/settings
+# Use env/settings for the IP info token. Leave empty locally to avoid
+# external calls slowing down requests during development.
+IPINFO_TOKEN = getattr(settings, "IPINFO_TOKEN", "")
+IS_DEBUG = getattr(settings, "DEBUG", False)
 
 
 def get_country_from_ip(ip: str) -> str:
-    if not ip:
+    if not ip or IS_DEBUG:
         return ""
 
-    token = IPINFO_TOKEN  # <-- USE THIS, not settings
-
+    token = IPINFO_TOKEN
     if not token:
         return ""
 
     try:
         response = requests.get(
             f"https://ipinfo.io/{ip}?token={token}",
-            timeout=2,
+            timeout=1,
         )
         data = response.json()
         return data.get("country", "")
