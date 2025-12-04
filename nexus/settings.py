@@ -274,7 +274,6 @@ SPECTACULAR_SETTINGS = {
 try:
     from drf_spectacular import drainage as _drainage
     from drf_spectacular import openapi as _openapi
-    import types
 
     # Force silent mode (mirrors DISABLE_ERRORS_AND_WARNINGS but defensive).
     _drainage.GENERATOR_STATS.silent = True

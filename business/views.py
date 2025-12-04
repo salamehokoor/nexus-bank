@@ -76,8 +76,10 @@ class MonthlySummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        month_param = _parse_date_param(request.query_params.get("month"))
         qs = MonthlySummary.objects.order_by("-month")
+        month_param = _parse_date_param(request.query_params.get("month"))
+        if month_param:
+            qs = qs.filter(month=month_param)
         return Response(MonthlySummarySerializer(qs, many=True).data)
 
 
