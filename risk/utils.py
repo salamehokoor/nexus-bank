@@ -25,11 +25,8 @@ def _lookup_country(ip: str) -> str:
         try:
             resp = requests.get(url, timeout=1)
             data = resp.json()
-            country = (
-                data.get("country")
-                or data.get("country_code")
-                or data.get("country_name")
-            )
+            country = (data.get("country") or data.get("country_code")
+                       or data.get("country_name"))
             if country:
                 return country
         except Exception:
@@ -39,21 +36,13 @@ def _lookup_country(ip: str) -> str:
     try:
         from .models import Incident, LoginEvent  # local import to avoid cycles
 
-        recent = (
-            Incident.objects.filter(ip=ip)
-            .exclude(country="")
-            .order_by("-timestamp")
-            .first()
-        )
+        recent = (Incident.objects.filter(ip=ip).exclude(
+            country="").order_by("-timestamp").first())
         if recent and recent.country:
             return recent.country
 
-        recent_login = (
-            LoginEvent.objects.filter(ip=ip)
-            .exclude(country="")
-            .order_by("-timestamp")
-            .first()
-        )
+        recent_login = (LoginEvent.objects.filter(ip=ip).exclude(
+            country="").order_by("-timestamp").first())
         if recent_login and recent_login.country:
             return recent_login.country
     except Exception:

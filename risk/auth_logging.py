@@ -114,11 +114,12 @@ def log_auth_event(
                         event="Impossible travel suspected",
                         severity="high",
                         details={
-                            "previous_country": previous_login.country,
-                            "new_country": country,
+                            "previous_country":
+                            previous_login.country,
+                            "new_country":
+                            country,
                             "minutes_since_last_login":
-                            round(time_since_last_login.total_seconds() /
-                                  60),
+                            round(time_since_last_login.total_seconds() / 60),
                             "previous_timestamp":
                             previous_login.timestamp.isoformat(),
                         },
@@ -284,7 +285,8 @@ def log_password_reset_attempt(request, email: str) -> None:
     )
 
 
-def log_password_reset_success(request, user: Optional[AbstractBaseUser]) -> None:
+def log_password_reset_success(request,
+                               user: Optional[AbstractBaseUser]) -> None:
     """
     Record successful password reset completion.
     """
@@ -315,7 +317,8 @@ def log_jwt_refresh_event(
     country = get_country_from_ip(ip)
 
     Incident.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
+        user=user
+        if user and getattr(user, "is_authenticated", False) else None,
         ip=ip,
         country=country,
         event="JWT refresh attempt" if successful else "JWT refresh failed",
@@ -340,7 +343,8 @@ def log_invalid_jwt_use(
     country = get_country_from_ip(ip)
 
     Incident.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
+        user=user
+        if user and getattr(user, "is_authenticated", False) else None,
         ip=ip,
         country=country,
         event="Expired or invalid JWT use",
@@ -367,7 +371,8 @@ def log_role_change_attempt(
     country = get_country_from_ip(ip)
 
     Incident.objects.create(
-        user=actor if actor and getattr(actor, "is_authenticated", False) else None,
+        user=actor
+        if actor and getattr(actor, "is_authenticated", False) else None,
         ip=ip,
         country=country,
         event="Role change attempt",
@@ -394,7 +399,8 @@ def log_failed_otp(
     country = get_country_from_ip(ip)
 
     Incident.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
+        user=user
+        if user and getattr(user, "is_authenticated", False) else None,
         ip=ip,
         country=country,
         event="Failed OTP verification",
@@ -420,10 +426,12 @@ def log_rate_limit_triggered(
     user = getattr(request, "user", None)
 
     Incident.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
+        user=user
+        if user and getattr(user, "is_authenticated", False) else None,
         ip=ip,
         country=country,
-        event="Request blocked by throttle" if blocked else "Rate limit triggered",
+        event="Request blocked by throttle"
+        if blocked else "Rate limit triggered",
         severity="medium" if blocked else "low",
         details={
             "scope": scope,
@@ -446,7 +454,8 @@ def log_suspicious_api_usage(
     user = getattr(request, "user", None)
 
     Incident.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
+        user=user
+        if user and getattr(user, "is_authenticated", False) else None,
         ip=ip,
         country=country,
         event="Suspicious API usage",
@@ -496,7 +505,8 @@ def log_csrf_failure(
     user = getattr(request, "user", None)
 
     Incident.objects.create(
-        user=user if user and getattr(user, "is_authenticated", False) else None,
+        user=user
+        if user and getattr(user, "is_authenticated", False) else None,
         ip=ip,
         country=country,
         event="CSRF failure",
