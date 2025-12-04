@@ -103,7 +103,7 @@ INSTALLED_APPS = [
     # django-cleanup MUST be last
     "django_cleanup.apps.CleanupConfig",
     # "risk.apps.RiskConfig",
-    "business"
+    "business.apps.BusinessConfig",
 ]
 
 SITE_ID = 1

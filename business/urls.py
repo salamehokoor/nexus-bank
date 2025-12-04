@@ -5,6 +5,8 @@ from .views import (
     WeeklySummaryView,
     MonthlySummaryView,
     CountryMetricsView,
+    CurrencyMetricsView,
+    ActiveUsersView,
     BusinessOverviewView,
 )
 
@@ -13,6 +15,8 @@ urlpatterns = [
     path("weekly/", WeeklySummaryView.as_view(), name="business-weekly"),
     path("monthly/", MonthlySummaryView.as_view(), name="business-monthly"),
     path("countries/", CountryMetricsView.as_view(), name="business-country"),
+    path("currencies/", CurrencyMetricsView.as_view(), name="business-currency"),
+    path("active/", ActiveUsersView.as_view(), name="business-active"),
     path("overview/", BusinessOverviewView.as_view(),
          name="business-overview"),
 ]
