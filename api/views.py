@@ -1,22 +1,31 @@
+"""
+API views for accounts, cards, transfers, bill payments, and social login.
+All endpoints enforce authentication and ownership scoping where applicable.
+"""
+
 from django.conf import settings
-from django.shortcuts import get_object_or_404
-from rest_framework import generics, permissions
-from .models import Account, Card
-from .serializers import AccountSerializer, CardSerializer
-from rest_framework.response import Response
-from rest_framework import status
-from django.db.models import Q
-from .models import Transaction, BillPayment
-from .serializers import InternalTransferSerializer, ExternalTransferSerializer, TransactionSerializer, BillPaymentSerializer
-from django.shortcuts import redirect
-from rest_framework_simplejwt.tokens import RefreshToken
-from risk.transaction_logging import (
-    log_transaction_event,
-    log_failed_transfer_attempt,
-)
-from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model
+from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect
+from rest_framework import generics, permissions, status
+from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from risk.transaction_logging import (
+    log_failed_transfer_attempt,
+    log_transaction_event,
+)
+from .models import Account, BillPayment, Card, Transaction
+from .serializers import (
+    AccountSerializer,
+    BillPaymentSerializer,
+    CardSerializer,
+    ExternalTransferSerializer,
+    InternalTransferSerializer,
+    TransactionSerializer,
+)
 
 User = get_user_model()
 
@@ -40,30 +49,24 @@ def social_login_complete(request):
     return redirect(redirect_url)
 
 
-###
 class LogoutView(APIView):
+    """Mark the user offline and end the session context."""
+
     schema = None  # avoid schema guess issues in docs
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        # Mark offline
         User.objects.filter(pk=request.user.pk).update(is_online=False)
-
-        # OPTIONAL: Blacklist refresh token
-        # Only if using JWT blacklist:
-        # request.auth.blacklist()
-
         return Response({"detail": "Logged out successfully."})
 
 
-##
 class AccountsListCreateView(generics.ListCreateAPIView):
     """
     GET /accounts
     POST /accounts
     """
-    serializer_class = AccountSerializer
 
+    serializer_class = AccountSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
@@ -72,20 +75,16 @@ class AccountsListCreateView(generics.ListCreateAPIView):
         acc_type = self.request.query_params.get("type")
         if acc_type:
             qs = qs.filter(type=acc_type)
-        #GET /accounts?type=Savings --> Lists only savings accounts
 
         ordering = self.request.query_params.get("ordering")
         if ordering in ("balance", "-balance", "created_at", "-created_at"):
             qs = qs.order_by(ordering)
         else:
-            # default ordering: newest to oldest
             qs = qs.order_by("-created_at")
-        #GET /accounts?ordering=-balance --> Lists all accounts sorted by balance descending
 
         return qs
 
     def perform_create(self, serializer):
-        # Force ownership to the authenticated user (ignore any user sent by client)
         serializer.save(user=self.request.user)
 
 
@@ -94,6 +93,7 @@ class AccountCardsListCreateView(generics.ListCreateAPIView):
     GET  /accounts/<account_number>/cards/  -> list cards for that account
     POST /accounts/<account_number>/cards/  -> create a card for that account
     """
+
     serializer_class = CardSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -103,7 +103,6 @@ class AccountCardsListCreateView(generics.ListCreateAPIView):
                           account_number=acct_num,
                           user=self.request.user)
         return Card.objects.filter(account_id=acct_num).order_by("-created_at")
-        # return only cards linked to that account
 
     def perform_create(self, serializer):
         acct_num = self.kwargs["account_number"]
@@ -118,11 +117,12 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
     GET  /api/transfers/internal/     -> list internal transfers (mine -> mine)
     POST /api/transfers/internal/     -> create internal transfer
     """
+
     permission_classes = [permissions.IsAuthenticated]
 
-    # POST uses the input serializer; GET uses the read serializer
     def get_serializer_class(self):
-        return InternalTransferSerializer if self.request.method == "POST" else TransactionSerializer
+        return (InternalTransferSerializer
+                if self.request.method == "POST" else TransactionSerializer)
 
     def get_queryset(self):
         u = self.request.user
@@ -130,7 +130,6 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
             sender_account__user=u,
             receiver_account__user=u,
         )
-        # optional filters
         account_number = self.request.query_params.get("account_number")
         if account_number:
             qs = qs.filter(
@@ -149,10 +148,10 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
             "-amount") else qs.order_by("-created_at")
 
     def create(self, request, *args, **kwargs):
-        s = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(data=request.data)
         try:
-            s.is_valid(raise_exception=True)
-            tx = s.save()
+            serializer.is_valid(raise_exception=True)
+            tx = serializer.save()
         except ValidationError as exc:
             log_failed_transfer_attempt(
                 request=request,
@@ -163,8 +162,9 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
             )
             raise
 
-        # 🔥 send this transfer to the risk engine
-        log_transaction_event(request=request, user=request.user, transaction=tx)
+        log_transaction_event(request=request,
+                              user=request.user,
+                              transaction=tx)
 
         return Response(
             TransactionSerializer(tx, context={
@@ -179,16 +179,17 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
     GET  /api/transfers/external/     -> list outgoing external transfers (mine -> others)
     POST /api/transfers/external/     -> create external transfer
     """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
-        return ExternalTransferSerializer if self.request.method == "POST" else TransactionSerializer
+        return (ExternalTransferSerializer
+                if self.request.method == "POST" else TransactionSerializer)
 
     def get_queryset(self):
         u = self.request.user
         qs = Transaction.objects.filter(sender_account__user=u).exclude(
             receiver_account__user=u)
-        # optional filters
         sender_id = self.request.query_params.get("sender_id")
         if sender_id:
             qs = qs.filter(sender_account_number=sender_id)
@@ -205,10 +206,10 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
             "-amount") else qs.order_by("-created_at")
 
     def create(self, request, *args, **kwargs):
-        s = self.get_serializer(data=request.data)
+        serializer = self.get_serializer(data=request.data)
         try:
-            s.is_valid(raise_exception=True)
-            tx = s.save()
+            serializer.is_valid(raise_exception=True)
+            tx = serializer.save()
         except ValidationError as exc:
             log_failed_transfer_attempt(
                 request=request,
@@ -219,8 +220,9 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
             )
             raise
 
-        # 🔥 also evaluate external transfers for high-value risk
-        log_transaction_event(request=request, user=request.user, transaction=tx)
+        log_transaction_event(request=request,
+                              user=request.user,
+                              transaction=tx)
 
         return Response(
             TransactionSerializer(tx, context={
@@ -231,27 +233,29 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
 
 
 class BillPaymentListCreateView(generics.ListCreateAPIView):
+    """List/create bill payments for the authenticated user."""
+
     serializer_class = BillPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         user = getattr(self.request, "user", None)
-        #get the value of this attribute if it exists, otherwise return a default value.
         if not getattr(user, "is_authenticated", False):
             return BillPayment.objects.none()
         return BillPayment.objects.filter(user=user)
 
     def perform_create(self, serializer):
-        serializer.save()  # user is injected by the serializer
+        serializer.save()
 
 
 class BillPaymentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve/update/delete a specific bill payment owned by the user."""
+
     serializer_class = BillPaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         user = getattr(self.request, "user", None)
-        #get the value of this attribute if it exists, otherwise return a default value.
         if not getattr(user, "is_authenticated", False):
             return BillPayment.objects.none()
         return BillPayment.objects.filter(user=user)

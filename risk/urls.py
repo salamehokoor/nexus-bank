@@ -1,3 +1,6 @@
+"""
+URL routes exposing risk monitoring endpoints (incidents, logins, KPIs).
+"""
 from django.urls import path
 from .views import IncidentListView, LoginEventsListView, RiskKPIsView, AxesUnlockIPView
 

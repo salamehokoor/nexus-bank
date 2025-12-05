@@ -1,3 +1,8 @@
+"""
+Utilities for auditing privileged/admin actions.
+Keeps admin activity in the shared Incident table for traceability.
+"""
+
 from typing import Optional
 
 from django.contrib.auth.models import AbstractBaseUser
@@ -15,7 +20,14 @@ def log_admin_action(
     severity: str = "medium",
 ) -> None:
     """
-    Generic admin action logger for critical operations.
+    Log an admin/privileged action to Incident.
+
+    Args:
+        request: Django request for IP/context (may be None for system tasks).
+        actor: Authenticated admin performing the action.
+        event: Short event label.
+        details: Structured metadata describing the action (avoid secrets).
+        severity: One of the Incident severity levels.
     """
     ip = _get_ip_from_request(request) if request is not None else None
     country = get_country_from_ip(ip) if ip else ""

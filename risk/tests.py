@@ -1,1 +1,1 @@
-# Create your tests here.
+"""Placeholder for risk app tests."""

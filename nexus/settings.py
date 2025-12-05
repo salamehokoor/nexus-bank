@@ -1,3 +1,7 @@
+"""
+Project settings for the Nexus banking application.
+Security defaults favor production; local development toggles are driven by env.
+"""
 # nexus/settings.py
 from datetime import timedelta
 from pathlib import Path
@@ -8,7 +12,7 @@ from celery.schedules import crontab
 # --------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Use env in prod; fall back to your current key so nothing breaks
+# Use env in prod; fall back to current key to avoid breaking local dev
 SECRET_KEY = os.environ.get(
     "DJANGO_SECRET_KEY",
     "django-insecure-x@hsf*xa)67w93ndtsx$oc*&mh5xs^f)@@g5&3*1dyl2=q@g+@")
@@ -52,6 +56,12 @@ else:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_HTTPONLY = True
+
+# Default to HttpOnly cookies in all environments
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_HTTPONLY = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://nexus-banking.com",
@@ -352,11 +362,11 @@ DJOSER = {
 }
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "nexusbank49@gmail.com"
-EMAIL_HOST_PASSWORD = "olvhyvasmjcxxfat"
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() == "true"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "nexusbank49@gmail.com")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "olvhyvasmjcxxfat")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 AXES_FAILURE_LIMIT = 5  # lock after 5 tries

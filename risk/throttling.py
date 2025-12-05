@@ -1,3 +1,6 @@
+"""
+Throttle classes that log blocked requests for audit visibility.
+"""
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle, ScopedRateThrottle
 
 from .auth_logging import log_rate_limit_triggered

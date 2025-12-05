@@ -1,3 +1,8 @@
+"""
+Middleware for logging authorization, API key misuse, and server errors.
+Each middleware records incidents without changing response handling.
+"""
+
 from typing import Callable
 
 from django.conf import settings

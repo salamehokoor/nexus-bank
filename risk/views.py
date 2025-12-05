@@ -1,3 +1,6 @@
+"""
+API endpoints for risk monitoring, authentication logging, and KPI dashboards.
+"""
 # risk/views.py
 from rest_framework.generics import ListAPIView, CreateAPIView
 from rest_framework.views import APIView
@@ -30,11 +33,12 @@ from .auth_logging import (
 # -------------------------------------------------------------------
 class LoggingTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
-    Wraps the normal SimpleJWT serializer to log *successful* logins.
+    Wraps the SimpleJWT serializer to log successful logins.
     Failed logins are still captured by the django_login_failed signal.
     """
 
     def validate(self, attrs):
+        """Authenticate and log the successful login event."""
         # This calls authenticate() and sets self.user on success
         data = super().validate(attrs)
 
@@ -91,7 +95,10 @@ class LoggingTokenRefreshView(TokenRefreshView):
 
 
 class AxesUnlockIPView(CreateAPIView):
-    #permission_classes = [IsAdminUser]
+    """
+    Admin-only endpoint to unlock a blocked IP through django-axes.
+    """
+    permission_classes = [IsAdminUser]
     serializer_class = UnlockIPSerializer
 
     def create(self, request, *args, **kwargs):
@@ -107,6 +114,7 @@ class AxesUnlockIPView(CreateAPIView):
 
 
 class IncidentListView(ListAPIView):
+    """List incidents for admin review with filtering and ordering."""
     queryset = Incident.objects.all().order_by("-timestamp")
     serializer_class = IncidentSerializer
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -116,12 +124,14 @@ class IncidentListView(ListAPIView):
 
 
 class LoginEventsListView(ListAPIView):
+    """List login events for admin review."""
     queryset = LoginEvent.objects.all().order_by("-timestamp")
     serializer_class = LoginEventSerializer
     permission_classes = [IsAdminUser]
 
 
 class RiskKPIsView(APIView):
+    """Return basic risk/security KPIs for dashboards."""
     schema = None
     permission_classes = [IsAdminUser]
 

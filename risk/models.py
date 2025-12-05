@@ -1,10 +1,18 @@
-from django.db import models
+"""
+Core risk models for auditing authentication and transactional activity.
+"""
+
 from django.contrib.auth import get_user_model
+from django.db import models
 
 User = get_user_model()
 
 
 class Incident(models.Model):
+    """
+    Stores security/audit incidents across the platform.
+    The flexible `details` JSON captures per-event metadata without schema churn.
+    """
     SEVERITY_CHOICES = (
         ("low", "Low"),
         ("medium", "Medium"),
@@ -21,7 +29,7 @@ class Incident(models.Model):
     ip = models.GenericIPAddressField(null=True, blank=True)
     country = models.CharField(max_length=100, blank=True)
 
-    # NEW: what email was used in the attempt (success or fail)
+    # Email used during the action (may differ from authenticated user).
     attempted_email = models.EmailField(blank=True)
 
     event = models.CharField(max_length=255)
@@ -38,6 +46,10 @@ class Incident(models.Model):
 
 
 class LoginEvent(models.Model):
+    """
+    Records individual login attempts (success and failure) for analytics
+    and anomaly detection.
+    """
     SOURCE_CHOICES = (
         ("password", "Password (Djoser/JWT/Admin)"),
         ("google", "Google OAuth"),

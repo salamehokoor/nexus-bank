@@ -1,3 +1,6 @@
+"""
+Serializers for business reporting models and overview payload.
+"""
 from rest_framework import serializers
 from .models import (
     DailyBusinessMetrics,
@@ -10,6 +13,7 @@ from .models import (
 
 
 class DailyBusinessMetricsSerializer(serializers.ModelSerializer):
+    """Serializer for daily business metrics snapshot."""
 
     class Meta:
         model = DailyBusinessMetrics
@@ -17,6 +21,7 @@ class DailyBusinessMetricsSerializer(serializers.ModelSerializer):
 
 
 class CountryUserMetricsSerializer(serializers.ModelSerializer):
+    """Serializer for per-country metrics."""
 
     class Meta:
         model = CountryUserMetrics
@@ -24,6 +29,7 @@ class CountryUserMetricsSerializer(serializers.ModelSerializer):
 
 
 class CurrencyMetricsSerializer(serializers.ModelSerializer):
+    """Serializer for per-currency metrics."""
 
     class Meta:
         model = CurrencyMetrics
@@ -31,6 +37,7 @@ class CurrencyMetricsSerializer(serializers.ModelSerializer):
 
 
 class WeeklySummarySerializer(serializers.ModelSerializer):
+    """Serializer for weekly summary metrics."""
 
     class Meta:
         model = WeeklySummary
@@ -38,6 +45,7 @@ class WeeklySummarySerializer(serializers.ModelSerializer):
 
 
 class MonthlySummarySerializer(serializers.ModelSerializer):
+    """Serializer for monthly summary metrics."""
 
     class Meta:
         model = MonthlySummary
@@ -45,6 +53,7 @@ class MonthlySummarySerializer(serializers.ModelSerializer):
 
 
 class ActiveUserWindowSerializer(serializers.ModelSerializer):
+    """Serializer for active user window metrics."""
 
     class Meta:
         model = ActiveUserWindow

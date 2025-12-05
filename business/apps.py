@@ -1,3 +1,6 @@
+"""
+App config for business metrics; wires signal handlers on ready.
+"""
 # business/apps.py
 from django.apps import AppConfig
 

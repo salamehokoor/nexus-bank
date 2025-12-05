@@ -1,3 +1,7 @@
+"""
+Django signal handlers for authentication lifecycle and admin state changes.
+Hooks log events to the risk module for auditing and anomaly detection.
+"""
 # risk/signals.py
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
@@ -38,6 +42,7 @@ def handle_user_logged_in(sender, request, user, **kwargs):
 # ------------------------------
 @receiver(django_login_failed)
 def handle_login_failed(sender, credentials, request, **kwargs):
+    """Capture failed login attempts and record the attempted email."""
     attempted = (credentials.get("email") or credentials.get("username") or "")
 
     # Try to map attempted email to a real user (for context)
@@ -83,12 +88,14 @@ def handle_user_locked_out(sender, request, username, **kwargs):
 
 @receiver(user_logged_out)
 def mark_user_offline(sender, request, user, **kwargs):
+    """Mark user offline after logout."""
     if user and user.is_authenticated:
         User.objects.filter(pk=user.pk).update(is_online=False)
 
 
 @receiver(pre_save, sender=User)
 def _cache_user_state(sender, instance, **kwargs):
+    """Cache state before save to detect changes on post_save."""
     if not instance.pk:
         return
     try:

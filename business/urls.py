@@ -1,3 +1,6 @@
+"""
+URL routes for business metrics APIs.
+"""
 from django.urls import path
 
 from .views import (
@@ -15,7 +18,9 @@ urlpatterns = [
     path("weekly/", WeeklySummaryView.as_view(), name="business-weekly"),
     path("monthly/", MonthlySummaryView.as_view(), name="business-monthly"),
     path("countries/", CountryMetricsView.as_view(), name="business-country"),
-    path("currencies/", CurrencyMetricsView.as_view(), name="business-currency"),
+    path("currencies/",
+         CurrencyMetricsView.as_view(),
+         name="business-currency"),
     path("active/", ActiveUsersView.as_view(), name="business-active"),
     path("overview/", BusinessOverviewView.as_view(),
          name="business-overview"),

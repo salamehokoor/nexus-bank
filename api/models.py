@@ -1,23 +1,37 @@
-from django.db import models, transaction
-from django.contrib.auth.models import AbstractUser, BaseUserManager
+"""
+Core banking models: users, accounts/cards, transactions, and bill payments.
+Implements balance updates atomically and handles basic FX conversions.
+"""
+
+import uuid
 from decimal import Decimal
+
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.db import models, transaction
 from django.db.models import Q, F
 from django.utils import timezone
-import uuid
+
 from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
 
 
 def generate_cvv():
+    """Generate a short random CVV placeholder (3 digits)."""
     return str(uuid.uuid4().int)[:3]
 
 
+def generate_account_number_default():
+    """Generate a 12-digit account number string."""
+    return str(uuid.uuid4().int)[:12]
+
+
 def default_expiration_date():
-    # five-year expiry from now without freezing defaults in migrations
+    """Five-year expiry from now without freezing defaults in migrations."""
     now = timezone.now()
     return now.date().replace(year=now.year + 5)
 
 
 class BaseModel(models.Model):
+    """Shared timestamp fields for auditable models."""
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -27,6 +41,7 @@ class BaseModel(models.Model):
 
 # ---------- Manager ----------
 class UserManager(BaseUserManager):
+    """Custom manager that uses email as the unique identifier."""
 
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -50,6 +65,7 @@ class UserManager(BaseUserManager):
 
 # ---------- User ----------
 class User(AbstractUser):
+    """Email-based user with `username` removed."""
     username = None
     email = models.EmailField(unique=True)
     is_online = models.BooleanField(default=False)
@@ -64,6 +80,7 @@ class User(AbstractUser):
 
 # ---------- Profile ----------
 class UserProfile(BaseModel):
+    """Basic profile data for a user."""
     user = models.OneToOneField(User,
                                 on_delete=models.CASCADE,
                                 related_name='profile')
@@ -77,6 +94,7 @@ class UserProfile(BaseModel):
 
 # ---------- Address ----------
 class UserAddress(BaseModel):
+    """Physical address linked to a user."""
     user = models.ForeignKey(User,
                              on_delete=models.CASCADE,
                              related_name='addresses')
@@ -88,6 +106,10 @@ class UserAddress(BaseModel):
 
 
 class Account(BaseModel):
+    """
+    Customer bank account with currency support and per-type limits.
+    Uses a 12-digit generated account_number as primary identifier.
+    """
 
     class AccountTypes(models.TextChoices):
         SAVINGS = 'Savings', 'Savings Account'
@@ -102,15 +124,16 @@ class Account(BaseModel):
         ('EUR', 'EUR'),
     ]
 
+    @staticmethod
     def generate_account_number():
-        # ensures 12-digit string
-        return str(uuid.uuid4().int)[:12]
+        # Backward-compat for historical migrations; uses module helper.
+        return generate_account_number_default()
 
     account_number = models.CharField(
         max_length=12,
         unique=True,
         editable=False,
-        default=generate_account_number,
+        default=generate_account_number_default,
         primary_key=True,
     )
 
@@ -191,6 +214,10 @@ class Card(BaseModel):
 
 
 class Transaction(BaseModel):
+    """
+    Represents a transfer between two accounts with balance snapshots.
+    Balance updates and FX conversions are executed atomically.
+    """
 
     sender_account = models.ForeignKey(Account,
                                        related_name='sent_transactions',
@@ -271,6 +298,7 @@ class Transaction(BaseModel):
 
 
 class Biller(models.Model):
+    """Entity that collects fixed-amount bill payments into a system account."""
     name = models.CharField(max_length=100, unique=True)
     category = models.CharField(max_length=50,
                                 choices=[('Electricity', 'Electricity'),
@@ -294,6 +322,10 @@ class Biller(models.Model):
 
 
 class BillPayment(models.Model):
+    """
+    Represents a single bill payment against a biller.
+    Amount and currency are enforced from the biller/account on creation.
+    """
     user = models.ForeignKey(User,
                              on_delete=models.CASCADE,
                              related_name="bill_payments")
@@ -343,8 +375,8 @@ class BillPayment(models.Model):
                 credited = jod_to_eur(self.amount)
             elif pair == ("EUR", "JOD"):
                 credited = eur_to_jod(self.amount)
-        else:
-            raise ValueError("Unsupported currency pair.")
+            else:
+                raise ValueError("Unsupported currency pair.")
 
         with transaction.atomic():  # commit/rollback as one unit
             sa.balance -= self.amount

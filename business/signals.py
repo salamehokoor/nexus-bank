@@ -1,3 +1,7 @@
+"""
+Signals to trigger metrics recomputation after key model changes.
+Debounces enqueueing to avoid task storms while keeping metrics fresh.
+"""
 # business/signals.py
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -23,10 +27,12 @@ def _debounced_schedule(date_key: str, call):
 
 @receiver(post_save, sender=Transaction)
 def update_metrics_on_transaction(sender, instance, created, **kwargs):
+    """Schedule daily metrics recompute on new transaction."""
     if not created:
         return
     target_date = getattr(instance, "created_at", None)
-    target_date = timezone.localdate(target_date) if target_date else timezone.localdate()
+    target_date = timezone.localdate(
+        target_date) if target_date else timezone.localdate()
     _debounced_schedule(
         f"tx:{target_date.isoformat()}",
         lambda: task_daily_metrics.delay(date=target_date.isoformat()),
@@ -35,10 +41,12 @@ def update_metrics_on_transaction(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=BillPayment)
 def update_metrics_on_bill_payment(sender, instance, created, **kwargs):
+    """Schedule daily metrics recompute on new bill payment."""
     if not created:
         return
     target_date = getattr(instance, "created_at", None)
-    target_date = timezone.localdate(target_date) if target_date else timezone.localdate()
+    target_date = timezone.localdate(
+        target_date) if target_date else timezone.localdate()
     _debounced_schedule(
         f"bp:{target_date.isoformat()}",
         lambda: task_daily_metrics.delay(date=target_date.isoformat()),
@@ -47,10 +55,12 @@ def update_metrics_on_bill_payment(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=User)
 def update_metrics_on_new_user(sender, instance, created, **kwargs):
+    """Schedule daily metrics recompute on new user signup."""
     if not created:
         return
     target_date = getattr(instance, "date_joined", None)
-    target_date = timezone.localdate(target_date) if target_date else timezone.localdate()
+    target_date = timezone.localdate(
+        target_date) if target_date else timezone.localdate()
     _debounced_schedule(
         f"user:{target_date.isoformat()}",
         lambda: task_daily_metrics.delay(date=target_date.isoformat()),

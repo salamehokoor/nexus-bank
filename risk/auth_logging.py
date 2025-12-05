@@ -1,3 +1,9 @@
+"""
+Authentication and access logging utilities.
+Captures login flows, refresh attempts, rate limits, and related auth events
+into the Incident/LoginEvent tables for monitoring and anomaly detection.
+"""
+
 # risk/auth_logging.py
 from datetime import timedelta
 from django.utils import timezone
@@ -22,10 +28,22 @@ def log_auth_event(
     attempted_email: str = "",
     failure_reason: str = "",
 ) -> None:
+    """
+    Persist a login attempt (success or failure) and emit relevant incidents.
+
+    Args:
+        request: Django request containing IP and headers.
+        user: Authenticated user object if login succeeded or was resolved.
+        successful: True for successful authentication, False otherwise.
+        source: Authentication source label (password/jwt/google/etc.).
+        attempted_email: Raw email/username submitted (if any).
+        failure_reason: Short code/description for failures.
+    """
 
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
     ua = request.META.get("HTTP_USER_AGENT", "")
+    attempted_email = (attempted_email or "").strip()
 
     # normalize attempted email
     if not attempted_email and user is not None:
@@ -55,6 +73,7 @@ def log_auth_event(
             user=user,
             ip=ip,
             country=country,
+            attempted_email=attempted_email,
             event="Successful login",
             severity="low",
             details={
@@ -70,6 +89,7 @@ def log_auth_event(
                 user=user,
                 ip=ip,
                 country=country,
+                attempted_email=attempted_email,
                 event="Admin login",
                 severity="medium",
                 details={
@@ -90,6 +110,7 @@ def log_auth_event(
                 user=user,
                 ip=ip,
                 country=country,
+                attempted_email=attempted_email,
                 event="Login from new country",
                 severity="medium",
                 details={
@@ -111,6 +132,7 @@ def log_auth_event(
                         user=user,
                         ip=ip,
                         country=country,
+                        attempted_email=attempted_email,
                         event="Impossible travel suspected",
                         severity="high",
                         details={
@@ -137,6 +159,7 @@ def log_auth_event(
                 user=user,
                 ip=ip,
                 country=country,
+                attempted_email=attempted_email,
                 event="Login from new device",
                 severity="medium",
                 details={
@@ -152,6 +175,7 @@ def log_auth_event(
                 user=user,
                 ip=ip,
                 country=country,
+                attempted_email=attempted_email,
                 event="Login at unusual hour",
                 severity="low",
                 details={"hour": login_hour},
@@ -245,6 +269,7 @@ def log_auth_event(
                         user=user,
                         ip=ip,
                         country=country,
+                        attempted_email=attempted_email,
                         event="Brute-force suspected on account",
                         severity="high",
                         details={
@@ -257,6 +282,7 @@ def log_auth_event(
             user=user,
             ip=ip,
             country=country,
+            attempted_email=attempted_email,
             event="Failed login attempt",
             severity="low",
             details={
@@ -269,7 +295,11 @@ def log_auth_event(
 
 def log_password_reset_attempt(request, email: str) -> None:
     """
-    Record a password reset request attempt.
+    Record a password reset request attempt for audit.
+
+    Args:
+        request: Django request for IP context.
+        email: Target email address requested for reset.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -289,6 +319,10 @@ def log_password_reset_success(request,
                                user: Optional[AbstractBaseUser]) -> None:
     """
     Record successful password reset completion.
+
+    Args:
+        request: Django request for IP context.
+        user: User whose password was reset.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -312,6 +346,12 @@ def log_jwt_refresh_event(
 ) -> None:
     """
     Record JWT refresh attempts (success or failure).
+
+    Args:
+        request: Django request containing headers.
+        user: User tied to the refresh attempt if present.
+        successful: True when refresh token was accepted.
+        failure_reason: Optional short code/message on failure.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -338,6 +378,11 @@ def log_invalid_jwt_use(
 ) -> None:
     """
     Record expired/invalid JWT usage outside the refresh endpoint.
+
+    Args:
+        request: Django request for IP/path context.
+        reason: Description of why the JWT is invalid/expired.
+        user: Optional user object if resolution was possible.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -366,6 +411,13 @@ def log_role_change_attempt(
 ) -> None:
     """
     Record attempts to change a user's role (e.g., elevating to admin).
+
+    Args:
+        request: Django request for IP context.
+        actor: User performing the change (may be unauthenticated).
+        target_user: User whose role is being changed.
+        new_role: Role requested/applied.
+        allowed: Whether the change was permitted.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -394,6 +446,11 @@ def log_failed_otp(
 ) -> None:
     """
     Record failed OTP validations (e.g., MFA challenge failures).
+
+    Args:
+        request: Django request for IP/user agent context.
+        user: User tied to the OTP challenge.
+        reason: Short description of the failure.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -420,6 +477,11 @@ def log_rate_limit_triggered(
 ) -> None:
     """
     Record when a rate limit is hit or a request is blocked by throttle.
+
+    Args:
+        request: Django request for IP/path context.
+        scope: Throttle scope name.
+        blocked: Whether the request was fully blocked.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -448,6 +510,10 @@ def log_suspicious_api_usage(
 ) -> None:
     """
     Record suspicious API usage patterns flagged elsewhere.
+
+    Args:
+        request: Django request with path/method context.
+        reason: Short description of why the call is suspicious.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -475,9 +541,19 @@ def log_unauthorized_api_key(
 ) -> None:
     """
     Record attempts to use unauthorized/invalid API keys.
+
+    Args:
+        request: Django request for path/IP context.
+        provided_key: Value supplied in the header (avoid logging secrets).
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
+
+    # Redact the provided key to avoid storing secrets; keep only prefix/suffix.
+    redacted_key = ""
+    if provided_key:
+        redacted_key = (provided_key[:4] + "***" +
+                        provided_key[-4:]) if len(provided_key) > 8 else "***"
 
     Incident.objects.create(
         user=None,
@@ -486,7 +562,7 @@ def log_unauthorized_api_key(
         event="Unauthorized API key attempt",
         severity="high",
         details={
-            "provided_key": provided_key,
+            "provided_key": redacted_key,
             "path": getattr(request, "path", ""),
         },
     )
@@ -499,6 +575,10 @@ def log_csrf_failure(
 ) -> None:
     """
     Record CSRF validation failures (for any custom views/forms).
+
+    Args:
+        request: Django request for path/IP context.
+        reason: Reason provided by CSRF failure handler.
     """
     ip = _get_ip_from_request(request)
     country = get_country_from_ip(ip)
@@ -529,6 +609,13 @@ def log_cloud_provider_alert(
 ) -> None:
     """
     Record alerts propagated from cloud providers (e.g., WAF, IAM anomalies).
+
+    Args:
+        provider: Cloud provider identifier (aws/gcp/azure/etc.).
+        alert_type: Short code/name for the alert.
+        resource: Resource implicated in the alert.
+        severity: Severity level to record.
+        details: Optional extra metadata.
     """
     Incident.objects.create(
         user=None,
@@ -551,6 +638,11 @@ def log_infrastructure_event(
 ) -> None:
     """
     Generic hook for backend/infrastructure incidents.
+
+    Args:
+        event: Short incident title.
+        severity: Severity level to record.
+        details: Optional metadata for troubleshooting.
     """
     Incident.objects.create(
         user=None,

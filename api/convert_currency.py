@@ -1,3 +1,8 @@
+"""
+Simple, deterministic FX helpers for JOD/USD/EUR conversions.
+All conversions are rounded to 2 decimal places using bankers' rounding.
+"""
+
 from decimal import Decimal, ROUND_HALF_UP
 
 RATES = {

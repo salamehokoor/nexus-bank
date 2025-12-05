@@ -1,3 +1,7 @@
+"""
+API views exposing business metrics (daily/weekly/monthly, country/currency, active users).
+All endpoints require authentication; responses are cache-hinted for dashboards.
+"""
 from datetime import datetime
 
 from django.utils.cache import patch_cache_control
@@ -26,6 +30,7 @@ from .serializers import (
 
 
 def _parse_date_param(value):
+    """Parse ISO date string to date; return None on failure."""
     if not value:
         return None
     try:
@@ -39,6 +44,7 @@ class BasePaginatedView(APIView):
     pagination_class = LimitOffsetPagination
 
     def paginate(self, request, queryset, serializer_class):
+        """Apply limit/offset pagination and return serialized page."""
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request, view=self)
         data = serializer_class(page, many=True).data
@@ -61,6 +67,7 @@ class DailyMetricsView(APIView):
 
 
 class WeeklySummaryView(BasePaginatedView):
+
     def get(self, request):
         week_param = _parse_date_param(request.query_params.get("week"))
         qs = WeeklySummary.objects.order_by("-week_start")
@@ -70,6 +77,7 @@ class WeeklySummaryView(BasePaginatedView):
 
 
 class MonthlySummaryView(BasePaginatedView):
+
     def get(self, request):
         month_param = _parse_date_param(request.query_params.get("month"))
         qs = MonthlySummary.objects.order_by("-month")
@@ -79,6 +87,7 @@ class MonthlySummaryView(BasePaginatedView):
 
 
 class CountryMetricsView(BasePaginatedView):
+
     def get(self, request):
         date_param = _parse_date_param(request.query_params.get("date"))
         qs = CountryUserMetrics.objects.order_by("-date", "country")
@@ -88,6 +97,7 @@ class CountryMetricsView(BasePaginatedView):
 
 
 class CurrencyMetricsView(BasePaginatedView):
+
     def get(self, request):
         date_param = _parse_date_param(request.query_params.get("date"))
         qs = CurrencyMetrics.objects.order_by("-date", "currency")
@@ -97,6 +107,7 @@ class CurrencyMetricsView(BasePaginatedView):
 
 
 class ActiveUsersView(BasePaginatedView):
+
     def get(self, request):
         date_param = _parse_date_param(request.query_params.get("date"))
         window = request.query_params.get("window")

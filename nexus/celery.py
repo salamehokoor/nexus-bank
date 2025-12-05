@@ -1,3 +1,8 @@
+
+"""
+Celery application bootstrap for Nexus.
+Loads settings via the CELERY_ namespace and auto-discovers tasks.
+"""
 from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery

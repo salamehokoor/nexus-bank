@@ -1,3 +1,7 @@
+"""
+Reporting models for business KPIs (daily/weekly/monthly, country, currency).
+Snapshots are populated by business.services via Celery tasks or signals.
+"""
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -7,6 +11,7 @@ User = get_user_model()
 
 
 class TimeStampedModel(models.Model):
+    """Abstract base with created/updated timestamps."""
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -15,6 +20,7 @@ class TimeStampedModel(models.Model):
 
 
 class DailyBusinessMetrics(TimeStampedModel):
+    """Daily aggregates of user activity, transactions, and revenue."""
     date = models.DateField(unique=True)
 
     # User metrics
@@ -106,6 +112,7 @@ class DailyBusinessMetrics(TimeStampedModel):
 
 
 class CountryUserMetrics(TimeStampedModel):
+    """Per-country breakdown of users, activity, transactions, and revenue."""
     date = models.DateField()
     country = models.CharField(max_length=50)
     count = models.IntegerField(default=0)
@@ -136,6 +143,7 @@ class CountryUserMetrics(TimeStampedModel):
 
 
 class CurrencyMetrics(TimeStampedModel):
+    """Per-currency aggregation of counts, volume, and revenue."""
     date = models.DateField()
     currency = models.CharField(max_length=16)
     tx_count = models.IntegerField(default=0)
@@ -174,6 +182,7 @@ class CurrencyMetrics(TimeStampedModel):
 
 
 class WeeklySummary(TimeStampedModel):
+    """Weekly aggregates of core metrics (Monday-start week)."""
     week_start = models.DateField(unique=True)
     week_end = models.DateField()
 
@@ -235,6 +244,7 @@ class WeeklySummary(TimeStampedModel):
 
 
 class MonthlySummary(TimeStampedModel):
+    """Monthly aggregates keyed by the first day of the month."""
     month = models.DateField(unique=True)  # first day of month
 
     new_users = models.IntegerField(default=0)
@@ -295,6 +305,7 @@ class MonthlySummary(TimeStampedModel):
 
 
 class ActiveUserWindow(TimeStampedModel):
+    """Rolling active-user windows for DAU/WAU/MAU by date."""
     date = models.DateField()
     window = models.CharField(
         max_length=8,

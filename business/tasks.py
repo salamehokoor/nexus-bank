@@ -1,3 +1,7 @@
+"""
+Celery task wrappers for business metrics recomputation.
+Tasks are idempotent and safe to run multiple times for the same window.
+"""
 from datetime import datetime, timedelta
 
 from celery import shared_task
@@ -14,6 +18,7 @@ from .services import (
 
 
 def _parse_iso_date(value, default):
+    """Parse ISO date string to date; return default on falsy/invalid."""
     if not value:
         return default
     return datetime.fromisoformat(value).date()
@@ -23,6 +28,9 @@ def _parse_iso_date(value, default):
 def task_daily_metrics(date=None):
     """
     Recompute a specific day's metrics. Safe to retry and run multiple times.
+
+    Args:
+        date: Optional ISO date string; defaults to today in local TZ.
     """
     target_date = _parse_iso_date(date, timezone.localdate())
     compute_daily_business_metrics(target_date)
@@ -33,6 +41,9 @@ def task_daily_metrics(date=None):
 def task_weekly_summary(week_start=None):
     """
     Aggregate the given week (Monday start). Safe to retry.
+
+    Args:
+        week_start: Optional ISO date string for Monday of target week.
     """
     today = timezone.localdate()
     week_start_date = _parse_iso_date(week_start,
@@ -44,6 +55,9 @@ def task_weekly_summary(week_start=None):
 def task_monthly_summary(month_start=None):
     """
     Aggregate the given month (first day). Safe to retry.
+
+    Args:
+        month_start: Optional ISO date string for first day of month.
     """
     today = timezone.localdate()
     month_start_date = _parse_iso_date(month_start, today.replace(day=1))
@@ -54,6 +68,13 @@ def task_monthly_summary(month_start=None):
 def task_backfill_metrics(start_date, end_date):
     """
     Backfill a date range inclusively. Use for historical rebuilds.
+
+    Args:
+        start_date: ISO date string (inclusive).
+        end_date: ISO date string (inclusive).
+
+    Raises:
+        ValueError: if either date is missing.
     """
     start = _parse_iso_date(start_date, None)
     end = _parse_iso_date(end_date, None)

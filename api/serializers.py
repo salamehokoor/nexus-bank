@@ -1,12 +1,20 @@
+"""
+Serializers for API resources: users, accounts/cards, transfers, and bills.
+Includes helper masking and per-request ownership scoping for safety.
+"""
+
 from decimal import Decimal
-from rest_framework import serializers
-from drf_spectacular.utils import extend_schema_field
-from .models import Account, Card, User, Transaction, BillPayment, Biller
-from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
+
 from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
+from drf_spectacular.utils import extend_schema_field
+from rest_framework import serializers
+
+from .convert_currency import eur_to_jod, jod_to_eur, jod_to_usd, usd_to_jod
+from .models import Account, BillPayment, Biller, Card, Transaction, User
 
 
 class UserCreateSerializer(BaseUserCreateSerializer):
+    """Register a user with email/password/first_name."""
 
     class Meta(BaseUserCreateSerializer.Meta):
         model = User
@@ -14,20 +22,27 @@ class UserCreateSerializer(BaseUserCreateSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    """Basic user info for embedding in other serializers."""
 
     class Meta:
         model = User
-
-        fields = ("id", 'first_name', 'email', 'is_staff', 'is_superuser')
+        fields = ("id", "first_name", "email", "is_staff", "is_superuser")
 
 
 class CardSerializer(serializers.ModelSerializer):
+    """
+    Card read model that exposes only last4 and expiration.
+    CVV and full card number are intentionally omitted.
+    """
+
     last4 = serializers.SerializerMethodField()
-    expiration_date = serializers.SerializerMethodField()  # <- override
+    expiration_date = serializers.SerializerMethodField(
+    )  # override for ISO date
 
     class Meta:
         model = Card
         fields = ["id", "card_type", "last4", "is_active", "expiration_date"]
+        read_only_fields = ("is_active", )
 
     @extend_schema_field(serializers.CharField())
     def get_last4(self, obj) -> str:
@@ -36,15 +51,14 @@ class CardSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.DateField())
     def get_expiration_date(self, obj) -> str:
         value = obj.expiration_date
-        # if it's datetime, convert to date; then ISO string
         if hasattr(value, "date"):
             value = value.date()
         return value.isoformat()
 
-    read_only_fields = ("is_active")
-
 
 class AccountSerializer(serializers.ModelSerializer):
+    """Account read model with masking, balance display, and limits."""
+
     mask = serializers.SerializerMethodField()
     maximum_withdrawal_amount = serializers.DecimalField(max_digits=12,
                                                          decimal_places=2,
@@ -60,9 +74,9 @@ class AccountSerializer(serializers.ModelSerializer):
             "owner",
             "mask",
             "type",
-            "currency",  # new field
+            "currency",
             "balance",
-            "display_balance",  # new field
+            "display_balance",
             "is_active",
             "maximum_withdrawal_amount",
             "card_count",
@@ -102,17 +116,13 @@ class AccountSerializer(serializers.ModelSerializer):
 
         if not user or not user.is_authenticated or not hasattr(
                 user, "profile"):
-            # no preference → show native account currency
             return {"currency": obj.currency, "amount": obj.balance}
 
         pref = user.profile.preferred_currency
-        # If same currency → show as-is
         if pref == obj.currency:
             return {"currency": obj.currency, "amount": obj.balance}
 
-        # Use conversion helpers from
         amount = obj.balance
-
         if obj.currency == "JOD" and pref == "USD":
             amount = jod_to_usd(obj.balance)
         elif obj.currency == "USD" and pref == "JOD":
@@ -125,8 +135,9 @@ class AccountSerializer(serializers.ModelSerializer):
         return {"currency": pref, "amount": amount}
 
 
-# ---------- read shape (reuse for responses) ----------
 class TransactionSerializer(serializers.ModelSerializer):
+    """Read-only representation of a transaction with account numbers."""
+
     sender_account_number = serializers.SerializerMethodField()
     receiver_account_number = serializers.SerializerMethodField()
 
@@ -152,8 +163,12 @@ class TransactionSerializer(serializers.ModelSerializer):
         return obj.receiver_account.account_number
 
 
-# ---------- INTERNAL: same-user -> same-user ----------
 class InternalTransferSerializer(serializers.Serializer):
+    """
+    Transfer between two accounts owned by the authenticated user.
+    Sender/receiver querysets are restricted per-request for safety.
+    """
+
     sender_account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.none())
     receiver_account = serializers.PrimaryKeyRelatedField(
@@ -185,12 +200,14 @@ class InternalTransferSerializer(serializers.Serializer):
         )
 
 
-# ---------- EXTERNAL: my account -> other user's specific account ----------
 class ExternalTransferSerializer(serializers.Serializer):
-    # I select which of *my* accounts to send from (limit to my accounts)
+    """
+    Transfer from one of the user's accounts to another user's account_number.
+    Sender queryset is restricted per-request; receiver is looked up by number.
+    """
+
     sender_account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.none())
-    # I specify the recipient by their public account_number (don’t expose their IDs)
     receiver_account_number = serializers.CharField(max_length=12)
     amount = serializers.DecimalField(max_digits=12,
                                       decimal_places=2,
@@ -205,7 +222,6 @@ class ExternalTransferSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         sender = attrs["sender_account"]
-        # Look up recipient by account_number; keep generic error to avoid enumeration
         try:
             receiver = Account.objects.get(
                 account_number=attrs["receiver_account_number"],
@@ -217,9 +233,6 @@ class ExternalTransferSerializer(serializers.Serializer):
         if receiver.account_number == sender.account_number:
             raise serializers.ValidationError(
                 "Cannot transfer to the same account.")
-        # allow sending to self? if you want to forbid self-user here:
-        # if receiver.user_id == req.user.id:
-        #     raise serializers.ValidationError("Use internal transfer for your own accounts.")
 
         attrs["receiver_account"] = receiver
         return attrs
@@ -233,14 +246,15 @@ class ExternalTransferSerializer(serializers.Serializer):
 
 
 class BillPaymentSerializer(serializers.ModelSerializer):
-    # take the user from the authenticated request (JWT), never from client input
-    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    """
+    Create/list bill payments for the authenticated user.
+    User is injected via HiddenField; account queryset is user-scoped.
+    """
 
-    # limit the account choices to the current user's accounts (set per-request)
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
     account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.none())
 
-    # amount & currency come from model.save(); expose as read-only
     amount = serializers.DecimalField(max_digits=12,
                                       decimal_places=2,
                                       read_only=True)
@@ -263,7 +277,6 @@ class BillPaymentSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         req = self.context.get("request")
-        # During real requests, filter by the JWT user; during schema gen, use empty QS
         if req and getattr(req.user, "is_authenticated", False):
             self.fields["account"].queryset = Account.objects.filter(
                 user=req.user)
@@ -271,7 +284,6 @@ class BillPaymentSerializer(serializers.ModelSerializer):
             self.fields["account"].queryset = Account.objects.none()
 
     def validate_account(self, account: Account):
-        # Extra guard in case someone crafts a foreign account ID
         req = self.context.get("request")
         if req and getattr(req.user, "is_authenticated", False):
             if account.user_id != req.user.id:
@@ -280,7 +292,6 @@ class BillPaymentSerializer(serializers.ModelSerializer):
         return account
 
     def validate(self, data):
-        # Optional sanity check on biller fixed amount
         biller: Biller | None = data.get("biller")
         if biller and biller.fixed_amount <= 0:
             raise serializers.ValidationError(

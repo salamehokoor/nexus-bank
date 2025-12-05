@@ -1,6 +1,16 @@
+"""
+API routes for accounts, cards, transfers, bill payments, and social auth.
+"""
 from django.urls import path
-from .views import AccountsListCreateView, AccountCardsListCreateView
-from .views import InternalTransferListCreateView, ExternalTransferListCreateView, BillPaymentListCreateView, BillPaymentDetailView, social_login_complete
+from .views import (
+    AccountCardsListCreateView,
+    AccountsListCreateView,
+    BillPaymentDetailView,
+    BillPaymentListCreateView,
+    ExternalTransferListCreateView,
+    InternalTransferListCreateView,
+    social_login_complete,
+)
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),

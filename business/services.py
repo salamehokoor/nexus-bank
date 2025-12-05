@@ -1,3 +1,8 @@
+"""
+Business metrics computation services.
+Aggregate transaction, bill payment, login, and incident data into reporting tables.
+All functions are idempotent and safe to run concurrently.
+"""
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Tuple
@@ -24,6 +29,7 @@ REFUND_STATUSES = {"refunded", "reversed", "chargeback"}
 
 
 def _has_field(model, field_name: str) -> bool:
+    """Return True if the model defines the given field."""
     try:
         model._meta.get_field(field_name)
         return True
@@ -32,6 +38,7 @@ def _has_field(model, field_name: str) -> bool:
 
 
 def _date_bounds(target_date) -> Tuple[datetime, datetime]:
+    """Return [start, end) datetimes for a given date in default timezone."""
     tz = timezone.get_default_timezone()
     start = timezone.make_aware(
         datetime.combine(target_date, datetime.min.time()), tz)
@@ -40,6 +47,7 @@ def _date_bounds(target_date) -> Tuple[datetime, datetime]:
 
 
 def _week_bounds(week_start) -> Tuple[datetime, datetime]:
+    """Return [start, end) datetimes for a Monday-start week."""
     tz = timezone.get_default_timezone()
     start = timezone.make_aware(
         datetime.combine(week_start, datetime.min.time()), tz)
@@ -48,6 +56,7 @@ def _week_bounds(week_start) -> Tuple[datetime, datetime]:
 
 
 def _month_bounds(month_start) -> Tuple[datetime, datetime]:
+    """Return [start, end) datetimes for a first-of-month date."""
     tz = timezone.get_default_timezone()
     start = timezone.make_aware(
         datetime.combine(month_start, datetime.min.time()), tz)
@@ -58,18 +67,21 @@ def _month_bounds(month_start) -> Tuple[datetime, datetime]:
 
 
 def _filter_success_tx(qs):
+    """Filter successful transactions if status exists; otherwise return qs."""
     if _has_field(Transaction, "status"):
         return qs.filter(status__in=SUCCESS_STATUSES)
     return qs
 
 
 def _filter_failed_tx(qs):
+    """Filter failed transactions if status exists; otherwise return empty qs."""
     if _has_field(Transaction, "status"):
         return qs.filter(status__in=FAILED_STATUSES)
     return qs.none()
 
 
 def _filter_refund_tx(qs):
+    """Filter refund/chargeback transactions based on available fields."""
     if _has_field(Transaction, "status"):
         return qs.filter(status__in=REFUND_STATUSES)
     if _has_field(Transaction, "is_refund"):
@@ -78,12 +90,14 @@ def _filter_refund_tx(qs):
 
 
 def _sum_field(qs, field_name: str) -> Decimal:
+    """Sum a field if present; otherwise return zero."""
     if not _has_field(qs.model, field_name):
         return Decimal("0.00")
     return qs.aggregate(total=Sum(field_name))["total"] or Decimal("0.00")
 
 
 def _count_distinct_users_login(start_dt, end_dt, success_only: bool = True) -> int:
+    """Count distinct users in LoginEvent within window, optionally success only."""
     qs = LoginEvent.objects.filter(timestamp__gte=start_dt,
                                    timestamp__lt=end_dt)
     if _has_field(LoginEvent, "successful"):
@@ -92,6 +106,7 @@ def _count_distinct_users_login(start_dt, end_dt, success_only: bool = True) -> 
 
 
 def _currency_field():
+    """Pick currency source field from Transaction or related accounts."""
     if _has_field(Transaction, "currency"):
         return "currency"
     if _has_field(Transaction, "sender_account__currency"):
@@ -302,6 +317,7 @@ def compute_country_snapshot(target_date=None):
 
 
 def _compute_country_rows(target_date, start_dt, end_dt):
+    """Build country-level aggregates for the target date."""
     country_field = "country" if _has_field(User, "country") else None
     if not country_field:
         return [("Unknown", 0, 0, 0, Decimal("0.00"), Decimal("0.00"))]
@@ -335,6 +351,7 @@ def _compute_country_rows(target_date, start_dt, end_dt):
 
 
 def _compute_currency_rows(target_date, start_dt, end_dt, tx_success):
+    """Build currency-level aggregates for the target date."""
     currency_field = _currency_field()
     if not currency_field:
         return []
@@ -355,6 +372,7 @@ def _compute_currency_rows(target_date, start_dt, end_dt, tx_success):
 
 
 def _cross_currency_volume(qs) -> Decimal:
+    """Sum volume for cross-currency transfers."""
     if not _has_field(Transaction, "receiver_account"):
         return Decimal("0.00")
     value = qs.exclude(sender_account__currency=F(
@@ -363,6 +381,7 @@ def _cross_currency_volume(qs) -> Decimal:
 
 
 def _upsert_country_metrics(target_date, rows):
+    """Replace country metrics for a date with the provided rows."""
     with transaction.atomic():
         CountryUserMetrics.objects.filter(date=target_date).delete()
         for country, count, active, tx_count, tx_amount, net_revenue in rows:
@@ -378,6 +397,7 @@ def _upsert_country_metrics(target_date, rows):
 
 
 def _upsert_currency_metrics(target_date, rows):
+    """Replace currency metrics for a date with the provided rows."""
     if not rows:
         return
     with transaction.atomic():
@@ -397,6 +417,7 @@ def _upsert_currency_metrics(target_date, rows):
 
 
 def _update_active_windows(target_date, dau, wau, mau):
+    """Upsert active-user windows (DAU/WAU/MAU) for the date."""
     with transaction.atomic():
         ActiveUserWindow.objects.update_or_create(
             date=target_date, window="dau", defaults={"active_users": dau})
