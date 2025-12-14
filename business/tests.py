@@ -1,88 +1,103 @@
-from datetime import date, timedelta
-from unittest import skip
+from decimal import Decimal
+from datetime import date
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import TransactionTestCase
 from django.utils import timezone
-from rest_framework.test import APITestCase
+from rest_framework.test import APIRequestFactory
 
-from .models import (ActiveUserWindow, CountryUserMetrics, CurrencyMetrics,
-                     DailyBusinessMetrics, MonthlySummary, WeeklySummary)
-from .services import compute_daily_business_metrics, backfill_metrics
-
-
-class DailyMetricsComputationTests(TestCase):
-    @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
-    def test_daily_metrics_idempotent(self):
-        target_date = timezone.localdate()
-        compute_daily_business_metrics(target_date)
-        compute_daily_business_metrics(target_date)
-        self.assertEqual(
-            DailyBusinessMetrics.objects.filter(date=target_date).count(), 1)
-
-    def test_backfill_creates_rows(self):
-        start = date.today() - timedelta(days=1)
-        end = date.today()
-        backfill_metrics(start, end)
-        self.assertTrue(
-            DailyBusinessMetrics.objects.filter(date__gte=start,
-                                                date__lte=end).exists())
+from api.models import Account, BillPayment, Biller, Transaction
+from api.serializers import InternalTransferSerializer
+from business.models import DailyBusinessMetrics
 
 
-@skip("Integration tests require fixtures for api/risk apps.")
-class IntegrationMetricFlowTests(TestCase):
-    def test_placeholder(self):
-        self.assertTrue(True)
+class MetricsSignalTests(TransactionTestCase):
 
-
-class BusinessApiTests(APITestCase):
     def setUp(self):
-        user_model = get_user_model()
-        self.user = user_model.objects.create_user(
-            email="biz@example.com", password="testpass123")
-        self.client.force_authenticate(self.user)
+        self.User = get_user_model()
+        self.user1 = self.User.objects.create_user(email="u1@example.com",
+                                                   password="pass")
+        self.user2 = self.User.objects.create_user(email="u2@example.com",
+                                                   password="pass")
+        self.a1 = Account.objects.create(user=self.user1,
+                                         balance=Decimal("200.00"),
+                                         currency="JOD")
+        self.a2 = Account.objects.create(user=self.user2,
+                                         balance=Decimal("50.00"),
+                                         currency="JOD")
+        self.a3 = Account.objects.create(user=self.user1,
+                                         balance=Decimal("80.00"),
+                                         currency="JOD")
 
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
-        month_start = today.replace(day=1)
+    def _today_metrics(self):
+        return DailyBusinessMetrics.objects.get(date=timezone.localdate())
 
-        DailyBusinessMetrics.objects.create(date=today)
-        WeeklySummary.objects.create(week_start=week_start, week_end=today)
-        MonthlySummary.objects.create(month=month_start)
-        CountryUserMetrics.objects.create(date=today,
-                                          country="US",
-                                          count=5,
-                                          active_users=3,
-                                          tx_count=1)
-        CurrencyMetrics.objects.create(date=today,
-                                       currency="USD",
-                                       tx_count=1)
-        ActiveUserWindow.objects.create(date=today,
-                                        window="dau",
-                                        active_users=7)
+    def test_transaction_updates_metrics_incrementally(self):
+        tx = Transaction.objects.create(sender_account=self.a1,
+                                        receiver_account=self.a2,
+                                        amount=Decimal("25.00"),
+                                        fee_amount=Decimal("1.50"),
+                                        status=Transaction.Status.SUCCESS)
+        metrics = self._today_metrics()
+        self.assertEqual(metrics.total_transactions_success, 1)
+        self.assertEqual(metrics.total_transferred_amount,
+                         Decimal("25.00"))
+        self.assertEqual(metrics.fee_revenue, Decimal("1.50"))
+        self.assertEqual(metrics.net_revenue, Decimal("1.50"))
+        self.assertEqual(tx.status, Transaction.Status.SUCCESS)
 
-    def test_business_endpoints_succeed_without_pagination_params(self):
-        endpoints = [
-            "/business/weekly/",
-            "/business/monthly/",
-            "/business/countries/",
-            "/business/currencies/",
-            "/business/active/",
-        ]
-        for url in endpoints:
-            with self.subTest(url=url):
-                resp = self.client.get(url)
-                self.assertEqual(resp.status_code, 200)
-                self.assertTrue(len(resp.data) >= 1)
+    def test_bill_payment_settles_and_updates_metrics(self):
+        system_account = Account.objects.create(user=self.user1,
+                                                balance=Decimal("0.00"),
+                                                currency="JOD")
+        biller = Biller.objects.create(name="WaterCo",
+                                       category="Water",
+                                       fixed_amount=Decimal("30.00"),
+                                       system_account=system_account)
+        bill_payment = BillPayment.objects.create(user=self.user1,
+                                                  account=self.a1,
+                                                  biller=biller,
+                                                  reference_number="REF123")
+        bill_payment.pay()
+        bill_payment.refresh_from_db()
+        self.assertEqual(bill_payment.status, "PAID")
+        metrics = self._today_metrics()
+        self.assertEqual(metrics.bill_payments_count, 1)
+        self.assertEqual(metrics.bill_payments_amount, Decimal("30.00"))
 
-    def test_daily_and_overview_endpoints(self):
-        daily_resp = self.client.get("/business/daily/")
-        self.assertEqual(daily_resp.status_code, 200)
-        self.assertIn("date", daily_resp.data)
+    def test_idempotent_transaction_creation(self):
+        factory = APIRequestFactory()
+        request = factory.post("/api/transfers/internal/")
+        request.user = self.user1
+        serializer = InternalTransferSerializer(
+            data={
+                "sender_account": str(self.a1.account_number),
+                "receiver_account": str(self.a3.account_number),
+                "amount": "10.00",
+                "idempotency_key": "dupe-key",
+            },
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        tx1 = serializer.save()
+        serializer = InternalTransferSerializer(
+            data={
+                "sender_account": str(self.a1.account_number),
+                "receiver_account": str(self.a3.account_number),
+                "amount": "10.00",
+                "idempotency_key": "dupe-key",
+            },
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        tx2 = serializer.save()
 
-        overview_resp = self.client.get("/business/overview/")
-        self.assertEqual(overview_resp.status_code, 200)
-        # Overview should include each section without errors
-        for key in ("daily", "weekly", "monthly", "country", "currency",
-                    "active"):
-            self.assertIn(key, overview_resp.data)
+        self.assertEqual(tx1.pk, tx2.pk)
+        self.assertEqual(
+            Transaction.objects.filter(idempotency_key="dupe-key").count(), 1)
+        metrics = self._today_metrics()
+        self.assertEqual(metrics.total_transactions_success, 1)
+        self.a1.refresh_from_db()
+        self.a3.refresh_from_db()
+        self.assertEqual(self.a1.balance, Decimal("190.00"))
+        self.assertEqual(self.a3.balance, Decimal("90.00"))

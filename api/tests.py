@@ -238,7 +238,8 @@ class AccountCardsAPITests(APITestCase):
 
         # owner can list
         self.client.force_authenticate(user=self.owner)
-        url = reverse("account-cards", kwargs={"account_id": self.acc.id})
+        url = reverse("account-cards",
+                      kwargs={"account_number": self.acc.account_number})
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(res.data), 2)
@@ -266,7 +267,7 @@ class TransactionsAPITests(APITestCase):
                                          balance=Decimal("10.00"))
 
     def test_auth_required(self):
-        url = reverse("transactions")
+        url = reverse("transfer-external")
         self.assertEqual(
             self.client.get(url).status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(
@@ -275,7 +276,7 @@ class TransactionsAPITests(APITestCase):
 
     def test_create_transaction_success(self):
         self.client.force_authenticate(user=self.u1)
-        url = reverse("transactions")
+        url = reverse("transfer-external")
         payload = {
             "sender_account": str(self.a1.id),
             "receiver_account": str(self.a2.id),
@@ -294,7 +295,7 @@ class TransactionsAPITests(APITestCase):
 
     def test_cannot_send_from_foreign_account(self):
         self.client.force_authenticate(user=self.u2)
-        url = reverse("transactions")
+        url = reverse("transfer-external")
         payload = {
             "sender_account": str(self.a1.id),  # owned by u1
             "receiver_account": str(self.a2.id),
@@ -305,7 +306,7 @@ class TransactionsAPITests(APITestCase):
 
     def test_cannot_send_to_same_account(self):
         self.client.force_authenticate(user=self.u1)
-        url = reverse("transactions")
+        url = reverse("transfer-external")
         payload = {
             "sender_account": str(self.a3.id),
             "receiver_account": str(self.a3.id),

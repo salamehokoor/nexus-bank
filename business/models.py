@@ -328,3 +328,20 @@ class ActiveUserWindow(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.window.upper()} on {self.date}: {self.active_users}"
+
+
+class DailyActiveUser(models.Model):
+    """Tracks unique successful logins per user per day for active-user counts."""
+    date = models.DateField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ("date", "user")
+        indexes = [
+            models.Index(fields=["date"]),
+            models.Index(fields=["user"]),
+            models.Index(fields=["date", "user"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} on {self.date}"

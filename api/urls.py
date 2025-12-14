@@ -11,6 +11,7 @@ from .views import (
     InternalTransferListCreateView,
     social_login_complete,
 )
+from .views import BillerListView
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
@@ -36,4 +37,5 @@ urlpatterns = [
     path("bill/<int:pk>/", BillPaymentDetailView.as_view(),
          name="bill-detail"),
     ###
+    path("billers/", BillerListView.as_view(), name="billers"),
 ]

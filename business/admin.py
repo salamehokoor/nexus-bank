@@ -3,15 +3,8 @@ import csv
 from django.contrib import admin
 from django.http import HttpResponse
 
-from .models import (
-    DailyBusinessMetrics,
-    WeeklySummary,
-    MonthlySummary,
-    CountryUserMetrics,
-    CurrencyMetrics,
-    ActiveUserWindow,
-)
-from .services import compute_daily_business_metrics, compute_weekly_summary, compute_monthly_summary
+from .models import (DailyBusinessMetrics, CountryUserMetrics, CurrencyMetrics,
+                     DailyActiveUser)
 
 
 def export_as_csv(modeladmin, request, queryset):
@@ -27,25 +20,7 @@ def export_as_csv(modeladmin, request, queryset):
     return response
 
 
-def recompute_daily(modeladmin, request, queryset):
-    for obj in queryset:
-        compute_daily_business_metrics(obj.date)
-
-
-def recompute_weekly(modeladmin, request, queryset):
-    for obj in queryset:
-        compute_weekly_summary(obj.week_start)
-
-
-def recompute_monthly(modeladmin, request, queryset):
-    for obj in queryset:
-        compute_monthly_summary(obj.month)
-
-
 export_as_csv.short_description = "Export selected to CSV"
-recompute_daily.short_description = "Recompute selected days"
-recompute_weekly.short_description = "Recompute selected weeks"
-recompute_monthly.short_description = "Recompute selected months"
 
 
 @admin.register(DailyBusinessMetrics)
@@ -64,42 +39,7 @@ class DailyMetricsAdmin(admin.ModelAdmin):
     search_fields = ("date", )
     date_hierarchy = "date"
     readonly_fields = ("created_at", "updated_at")
-    actions = [export_as_csv, recompute_daily]
-
-
-@admin.register(WeeklySummary)
-class WeeklySummaryAdmin(admin.ModelAdmin):
-    list_display = (
-        "week_start",
-        "week_end",
-        "new_users",
-        "total_transactions_success",
-        "total_transferred_amount",
-        "net_revenue",
-    )
-    ordering = ("-week_start", )
-    list_filter = ("week_start", )
-    search_fields = ("week_start", "week_end")
-    date_hierarchy = "week_start"
-    readonly_fields = ("created_at", "updated_at")
-    actions = [export_as_csv, recompute_weekly]
-
-
-@admin.register(MonthlySummary)
-class MonthlySummaryAdmin(admin.ModelAdmin):
-    list_display = (
-        "month",
-        "new_users",
-        "total_transactions_success",
-        "total_transferred_amount",
-        "net_revenue",
-    )
-    ordering = ("-month", )
-    list_filter = ("month", )
-    search_fields = ("month", )
-    date_hierarchy = "month"
-    readonly_fields = ("created_at", "updated_at")
-    actions = [export_as_csv, recompute_monthly]
+    actions = [export_as_csv]
 
 
 @admin.register(CountryUserMetrics)
@@ -126,12 +66,8 @@ class CurrencyMetricsAdmin(admin.ModelAdmin):
     actions = [export_as_csv]
 
 
-@admin.register(ActiveUserWindow)
-class ActiveUserWindowAdmin(admin.ModelAdmin):
-    list_display = ("date", "window", "active_users")
+@admin.register(DailyActiveUser)
+class DailyActiveUserAdmin(admin.ModelAdmin):
+    list_display = ("date", "user")
     ordering = ("-date", )
-    list_filter = ("window", )
-    search_fields = ("window", )
-    date_hierarchy = "date"
-    readonly_fields = ("created_at", "updated_at")
-    actions = [export_as_csv]
+    search_fields = ("user__email", )

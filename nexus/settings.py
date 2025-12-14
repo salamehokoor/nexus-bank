@@ -6,7 +6,6 @@ Security defaults favor production; local development toggles are driven by env.
 from datetime import timedelta
 from pathlib import Path
 import os
-from celery.schedules import crontab
 # --------------------
 # BASE / DEBUG / SECRET
 # --------------------
@@ -86,8 +85,6 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    #celery
-    "django_celery_beat",
     # Auth & accounts
     "django.contrib.sites",
     "allauth",
@@ -253,7 +250,7 @@ RISK_ALLOWED_API_KEYS = os.environ.get(
 CSRF_FAILURE_VIEW = "risk.views.csrf_failure_view"
 
 SIMPLE_JWT = {
-    "AUTH_HEADER_TYPES": ("JWT", ),
+    "AUTH_HEADER_TYPES": ("Bearer", ),
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     #"ROTATE_REFRESH_TOKENS": True,
@@ -375,42 +372,4 @@ AXES_COOLOFF_TIME = 1  # hours before unlock
 AXES_ENABLED = True
 AXES_LOCKOUT_PARAMETERS = ['ip_address']
 
-#celery config
-CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
-CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/1"
-
-CELERY_TIMEZONE = "Asia/Amman"
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-
-CELERY_WORKER_ENABLE_REMOTE_CONTROL = True
-CELERY_BEAT_SCHEDULE_FILENAME = "celerybeat-schedule"
-
-CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-
-CELERY_BEAT_SCHEDULE = {
-    # 1) DAILY METRICS – every hour
-    "daily-metrics-every-hour": {
-        "task": "business.tasks.task_daily_metrics",
-        "schedule": crontab(minute=0),  # every hour at XX:00
-    },
-
-    # 2) WEEKLY SUMMARY – twice per week (Mon & Thu at 01:00)
-    "weekly-summary-twice-week": {
-        "task": "business.tasks.task_weekly_summary",
-        "schedule": crontab(hour=1, minute=0, day_of_week="mon,thu"),
-    },
-
-    # 3) MONTHLY SUMMARY – 4 times per month (1, 8, 16, 24 at 02:00)
-    "monthly-summary-4x": {
-        "task": "business.tasks.task_monthly_summary",
-        "schedule": crontab(hour=2, minute=0, day_of_month="1,8,16,24"),
-    },
-}
-
-if DEBUG:
-    # Run Celery tasks synchronously during local development to avoid needing
-    # a running Redis broker.
-    CELERY_TASK_ALWAYS_EAGER = True
-    CELERY_TASK_EAGER_PROPAGATES = True
+# Metrics run inline; no Celery configuration is required.

@@ -22,7 +22,8 @@ admin.site.index_title = "Dashboard"
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ("id", "email", "is_staff", "is_superuser", "is_active")
+    list_display = ("id", "email", "country", "is_staff", "is_superuser",
+                    "is_active")
     search_fields = ("email",)
     ordering = ("-date_joined",)
 
@@ -62,12 +63,12 @@ class CardAdmin(admin.ModelAdmin):
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
     list_display = ("id", "sender_account", "receiver_account", "amount",
-                    "created_at")
+                    "fee_amount", "status", "idempotency_key", "created_at")
     search_fields = ("sender_account__account_number",
                      "receiver_account__account_number",
                      "sender_account__user__email",
                      "receiver_account__user__email")
-    ordering = ("-created_at",)
+    ordering = ("-created_at", )
 
 
 @admin.register(Biller)

@@ -133,8 +133,8 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
         account_number = self.request.query_params.get("account_number")
         if account_number:
             qs = qs.filter(
-                Q(sender_account_number=account_number)
-                | Q(receiver_account_number=account_number))
+                Q(sender_account__account_number=account_number)
+                | Q(receiver_account__account_number=account_number))
         date_from = self.request.query_params.get("from")
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
@@ -151,7 +151,10 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         try:
             serializer.is_valid(raise_exception=True)
-            tx = serializer.save()
+            try:
+                tx = serializer.save()
+            except ValueError as exc:
+                raise ValidationError({"detail": str(exc)})
         except ValidationError as exc:
             log_failed_transfer_attempt(
                 request=request,
@@ -162,9 +165,10 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
             )
             raise
 
-        log_transaction_event(request=request,
-                              user=request.user,
-                              transaction=tx)
+        if getattr(serializer, "created", True):
+            log_transaction_event(request=request,
+                                  user=request.user,
+                                  transaction=tx)
 
         return Response(
             TransactionSerializer(tx, context={
@@ -192,7 +196,7 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
             receiver_account__user=u)
         sender_id = self.request.query_params.get("sender_id")
         if sender_id:
-            qs = qs.filter(sender_account_number=sender_id)
+            qs = qs.filter(sender_account__account_number=sender_id)
         date_from = self.request.query_params.get("from")
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
@@ -209,7 +213,10 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         try:
             serializer.is_valid(raise_exception=True)
-            tx = serializer.save()
+            try:
+                tx = serializer.save()
+            except ValueError as exc:
+                raise ValidationError({"detail": str(exc)})
         except ValidationError as exc:
             log_failed_transfer_attempt(
                 request=request,
@@ -220,9 +227,10 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
             )
             raise
 
-        log_transaction_event(request=request,
-                              user=request.user,
-                              transaction=tx)
+        if getattr(serializer, "created", True):
+            log_transaction_event(request=request,
+                                  user=request.user,
+                                  transaction=tx)
 
         return Response(
             TransactionSerializer(tx, context={
@@ -245,7 +253,10 @@ class BillPaymentListCreateView(generics.ListCreateAPIView):
         return BillPayment.objects.filter(user=user)
 
     def perform_create(self, serializer):
-        serializer.save()
+        try:
+            serializer.save()
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
 
 
 class BillPaymentDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -259,3 +270,18 @@ class BillPaymentDetailView(generics.RetrieveUpdateDestroyAPIView):
         if not getattr(user, "is_authenticated", False):
             return BillPayment.objects.none()
         return BillPayment.objects.filter(user=user)
+
+
+class BillerListView(generics.ListAPIView):
+    """Read-only list of billers for discovery."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = BillPaymentSerializer  # placeholder to satisfy DRF, replaced below
+
+    def get_serializer_class(self):
+        from .serializers import BillerSerializer
+        return BillerSerializer
+
+    def get_queryset(self):
+        from .models import Biller
+        return Biller.objects.all().order_by("name")

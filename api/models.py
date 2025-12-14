@@ -69,6 +69,7 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     is_online = models.BooleanField(default=False)
+    country = models.CharField(max_length=100, blank=True, default="")
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
 
@@ -218,6 +219,10 @@ class Transaction(BaseModel):
     Represents a transfer between two accounts with balance snapshots.
     Balance updates and FX conversions are executed atomically.
     """
+    class Status(models.TextChoices):
+        SUCCESS = "SUCCESS", "Success"
+        FAILED = "FAILED", "Failed"
+        REVERSED = "REVERSED", "Reversed"
 
     sender_account = models.ForeignKey(Account,
                                        related_name='sent_transactions',
@@ -228,6 +233,19 @@ class Transaction(BaseModel):
                                          on_delete=models.CASCADE)
 
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+    fee_amount = models.DecimalField(max_digits=12,
+                                     decimal_places=2,
+                                     default=Decimal('0.00'))
+
+    status = models.CharField(max_length=16,
+                              choices=Status.choices,
+                              default=Status.SUCCESS)
+
+    idempotency_key = models.CharField(max_length=64,
+                                       blank=True,
+                                       null=True,
+                                       unique=True)
 
     sender_balance_after = models.DecimalField(max_digits=12,
                                                decimal_places=2,
@@ -250,6 +268,14 @@ class Transaction(BaseModel):
         if self.pk:
             return super().save(*args, **kwargs)
 
+        # Only successful transactions move money; FAILED/REVERSED are stored-only.
+        if self.status != self.Status.SUCCESS:
+            if self.sender_balance_after is None:
+                self.sender_balance_after = Decimal("0.00")
+            if self.receiver_balance_after is None:
+                self.receiver_balance_after = Decimal("0.00")
+            return super().save(*args, **kwargs)
+
         with transaction.atomic():
             sa = Account.objects.select_for_update().get(
                 pk=self.sender_account_id)
@@ -260,7 +286,11 @@ class Transaction(BaseModel):
                 raise ValueError("Cannot transfer to the same account.")
             if self.amount <= 0:
                 raise ValueError("Amount must be positive.")
-            if sa.balance < self.amount:
+
+            fee_amount = self.fee_amount or Decimal("0.00")
+            total_debit = (self.amount + fee_amount)
+
+            if sa.balance < total_debit:
                 raise ValueError("Insufficient funds.")
 
             # --- Handle currency conversion ---
@@ -280,7 +310,7 @@ class Transaction(BaseModel):
 
             # --- Update balances atomically ---
             Account.objects.filter(pk=sa.pk).update(balance=F("balance") -
-                                                    self.amount)
+                                                    total_debit)
             Account.objects.filter(pk=ra.pk).update(balance=F("balance") +
                                                     credited)
 
@@ -310,6 +340,7 @@ class Biller(models.Model):
     fixed_amount = models.DecimalField(max_digits=12,
                                        decimal_places=2,
                                        default=Decimal('0.00'))
+    created_at = models.DateTimeField(auto_now_add=True)
     # money for this biller is collected into this account
     system_account = models.OneToOneField(Account,
                                           on_delete=models.CASCADE,
@@ -358,38 +389,17 @@ class BillPayment(models.Model):
         """Debit user's account and credit biller.system_account (with FX)."""
         if not self.biller.system_account:
             raise ValueError(f"{self.biller.name} has no system account.")
-        sa = self.account
-        ra = self.biller.system_account
-        if sa.balance < self.amount:
-            raise ValueError("Insufficient funds.")
-
-        credited = self.amount
-        if sa.currency != ra.currency:
-            pair = (sa.currency, ra.currency)
-
-            if pair == ("JOD", "USD"):
-                credited = jod_to_usd(self.amount)
-            elif pair == ("USD", "JOD"):
-                credited = usd_to_jod(self.amount)
-            elif pair == ("JOD", "EUR"):
-                credited = jod_to_eur(self.amount)
-            elif pair == ("EUR", "JOD"):
-                credited = eur_to_jod(self.amount)
-            else:
-                raise ValueError("Unsupported currency pair.")
+        sender = self.account
+        receiver = self.biller.system_account
 
         with transaction.atomic():  # commit/rollback as one unit
-            sa.balance -= self.amount
-            ra.balance += credited
-            sa.save(update_fields=['balance'])
-            ra.save(update_fields=['balance'])
-
-            Transaction.objects.create(
-                sender_account=sa,
-                receiver_account=ra,
+            tx = Transaction.objects.create(
+                sender_account=sender,
+                receiver_account=receiver,
                 amount=self.amount,
-                sender_balance_after=sa.balance,
-                receiver_balance_after=ra.balance,
+                fee_amount=Decimal("0.00"),
+                status=Transaction.Status.SUCCESS,
             )
             self.status = 'PAID'
-            self.save(update_fields=['status'])
+            super().save(update_fields=['status'])
+            return tx

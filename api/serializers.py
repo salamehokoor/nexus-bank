@@ -18,7 +18,7 @@ class UserCreateSerializer(BaseUserCreateSerializer):
 
     class Meta(BaseUserCreateSerializer.Meta):
         model = User
-        fields = ("email", "password", "first_name")
+        fields = ("email", "password", "first_name", "country")
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -26,7 +26,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "first_name", "email", "is_staff", "is_superuser")
+        fields = ("id", "first_name", "email", "country", "is_staff",
+                  "is_superuser")
 
 
 class CardSerializer(serializers.ModelSerializer):
@@ -146,6 +147,9 @@ class TransactionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "amount",
+            "fee_amount",
+            "status",
+            "idempotency_key",
             "sender_account_number",
             "receiver_account_number",
             "sender_balance_after",
@@ -176,6 +180,8 @@ class InternalTransferSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12,
                                       decimal_places=2,
                                       min_value=Decimal("0.01"))
+    idempotency_key = serializers.CharField(
+        max_length=64, required=False, allow_blank=True, allow_null=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -193,11 +199,21 @@ class InternalTransferSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated):
-        return Transaction.objects.create(
+        idem = validated.get("idempotency_key") or None
+        existing = (Transaction.objects.filter(
+            idempotency_key=idem).first() if idem else None)
+        self.created = existing is None
+        if existing:
+            return existing
+        tx = Transaction.objects.create(
             sender_account=validated["sender_account"],
             receiver_account=validated["receiver_account"],
             amount=validated["amount"],
+            idempotency_key=idem,
+            fee_amount=Decimal("0.00"),
+            status=Transaction.Status.SUCCESS,
         )
+        return tx
 
 
 class ExternalTransferSerializer(serializers.Serializer):
@@ -212,6 +228,8 @@ class ExternalTransferSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12,
                                       decimal_places=2,
                                       min_value=Decimal("0.01"))
+    idempotency_key = serializers.CharField(
+        max_length=64, required=False, allow_blank=True, allow_null=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -238,11 +256,21 @@ class ExternalTransferSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated):
-        return Transaction.objects.create(
+        idem = validated.get("idempotency_key") or None
+        existing = (Transaction.objects.filter(
+            idempotency_key=idem).first() if idem else None)
+        self.created = existing is None
+        if existing:
+            return existing
+        tx = Transaction.objects.create(
             sender_account=validated["sender_account"],
             receiver_account=validated["receiver_account"],
             amount=validated["amount"],
+            idempotency_key=idem,
+            fee_amount=Decimal("0.00"),
+            status=Transaction.Status.SUCCESS,
         )
+        return tx
 
 
 class BillPaymentSerializer(serializers.ModelSerializer):
@@ -297,3 +325,18 @@ class BillPaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"biller": "Biller has no payable fixed amount."})
         return data
+
+    def create(self, validated_data):
+        bill_payment = super().create(validated_data)
+        # Immediately settle the bill; pay() will raise on insufficient funds.
+        bill_payment.pay()
+        return bill_payment
+
+
+class BillerSerializer(serializers.ModelSerializer):
+    """Public read serializer for billers."""
+
+    class Meta:
+        model = Biller
+        fields = ("id", "name", "fixed_amount")
+        read_only_fields = fields
