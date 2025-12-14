@@ -47,8 +47,13 @@ class BasePaginatedView(APIView):
         """Apply limit/offset pagination and return serialized page."""
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request, view=self)
-        data = serializer_class(page, many=True).data
-        return paginator.get_paginated_response(data)
+        # LimitOffsetPagination returns None when page_size is unset; in that
+        # case we should return the full queryset instead of crashing.
+        if page is not None:
+            data = serializer_class(page, many=True).data
+            return paginator.get_paginated_response(data)
+        data = serializer_class(queryset, many=True).data
+        return Response(data)
 
 
 class DailyMetricsView(APIView):
