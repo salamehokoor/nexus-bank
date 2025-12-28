@@ -181,11 +181,12 @@ class CurrencyMetrics(TimeStampedModel):
         return f"{self.currency} on {self.date}"
 
 
-class WeeklySummary(TimeStampedModel):
-    """Weekly aggregates of core metrics (Monday-start week)."""
-    week_start = models.DateField(unique=True)
-    week_end = models.DateField()
 
+class AbstractPeriodSummary(TimeStampedModel):
+    """
+    Abstract base class for period-based metric summaries (weekly/monthly).
+    Contains all shared aggregation fields to eliminate code duplication.
+    """
     new_users = models.IntegerField(default=0)
     active_users = models.IntegerField(default=0)
     total_transactions_success = models.IntegerField(default=0)
@@ -231,6 +232,15 @@ class WeeklySummary(TimeStampedModel):
         decimal_places=2,
         default=Decimal("0.00"),
     )
+
+    class Meta:
+        abstract = True
+
+
+class WeeklySummary(AbstractPeriodSummary):
+    """Weekly aggregates of core metrics (Monday-start week)."""
+    week_start = models.DateField(unique=True)
+    week_end = models.DateField()
 
     class Meta:
         ordering = ["-week_start"]
@@ -243,55 +253,9 @@ class WeeklySummary(TimeStampedModel):
         return f"Weekly Summary {self.week_start} -> {self.week_end}"
 
 
-class MonthlySummary(TimeStampedModel):
+class MonthlySummary(AbstractPeriodSummary):
     """Monthly aggregates keyed by the first day of the month."""
     month = models.DateField(unique=True)  # first day of month
-
-    new_users = models.IntegerField(default=0)
-    active_users = models.IntegerField(default=0)
-    total_transactions_success = models.IntegerField(default=0)
-    total_transactions_failed = models.IntegerField(default=0)
-    total_transactions_refunded = models.IntegerField(default=0)
-    total_transferred_amount = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    total_refunded_amount = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    bill_payments_amount = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    fee_revenue = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    bill_commission_revenue = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    fx_spread_revenue = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    net_revenue = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
-    profit = models.DecimalField(
-        max_digits=18,
-        decimal_places=2,
-        default=Decimal("0.00"),
-    )
 
     class Meta:
         ordering = ["-month"]
@@ -302,6 +266,7 @@ class MonthlySummary(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"Monthly Summary {self.month}"
+
 
 
 class ActiveUserWindow(TimeStampedModel):

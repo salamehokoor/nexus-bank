@@ -79,18 +79,16 @@ def record_transaction(transaction_obj: Transaction):
         metrics, _ = _get_metrics_row(target_date)
 
         if transaction_obj.status == Transaction.Status.SUCCESS:
-            prev_count = metrics.total_transactions_success
-            current_avg = metrics.avg_transaction_value or Decimal("0.00")
-            metrics.total_transactions_success = prev_count + 1
+            metrics.total_transactions_success += 1
             metrics.total_transferred_amount += transaction_obj.amount
             metrics.fee_revenue += transaction_obj.fee_amount
             if cross_currency:
                 metrics.fx_volume += transaction_obj.amount
-            metrics.avg_transaction_value = (transaction_obj.amount if
-                                             prev_count == 0 else
-                                             ((current_avg * prev_count) +
-                                              transaction_obj.amount) /
-                                             (prev_count + 1))
+            # Use exact calculation (sum / count) instead of rolling average
+            # to eliminate floating-point drift over many transactions
+            metrics.avg_transaction_value = (
+                metrics.total_transferred_amount / metrics.total_transactions_success
+            ).quantize(Decimal("0.01"))
         elif transaction_obj.status == Transaction.Status.FAILED:
             metrics.total_transactions_failed += 1
         elif transaction_obj.status == Transaction.Status.REVERSED:

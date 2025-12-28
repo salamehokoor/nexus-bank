@@ -11,7 +11,7 @@ from django.db import models, transaction
 from django.db.models import Q, F
 from django.utils import timezone
 
-from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod
+from .convert_currency import jod_to_usd, usd_to_jod, jod_to_eur, eur_to_jod, usd_to_eur, eur_to_usd
 
 
 def generate_cvv():
@@ -166,6 +166,8 @@ class Account(BaseModel):
         AccountTypes.SAVINGS: Decimal('10000.00'),
         AccountTypes.SALARY: Decimal('10000.00'),
         AccountTypes.BASIC: Decimal('10000.00'),
+        AccountTypes.USD: Decimal('10000.00'),
+        AccountTypes.EUR: Decimal('10000.00'),
     }
 
     @property
@@ -305,6 +307,10 @@ class Transaction(BaseModel):
                     credited = jod_to_eur(self.amount)
                 elif pair == ('EUR', 'JOD'):
                     credited = eur_to_jod(self.amount)
+                elif pair == ('USD', 'EUR'):
+                    credited = usd_to_eur(self.amount)
+                elif pair == ('EUR', 'USD'):
+                    credited = eur_to_usd(self.amount)
                 else:
                     raise ValueError(f"Unsupported currency pair: {pair}")
 
@@ -376,6 +382,10 @@ class BillPayment(models.Model):
                               choices=[('PENDING', 'Pending'),
                                        ('PAID', 'Paid'), ('FAILED', 'Failed')],
                               default='PENDING')
+    idempotency_key = models.CharField(max_length=64,
+                                       blank=True,
+                                       null=True,
+                                       unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):

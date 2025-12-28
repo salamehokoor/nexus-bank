@@ -115,12 +115,16 @@ class AccountSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = getattr(request, "user", None)
 
-        if not user or not user.is_authenticated or not hasattr(
-                user, "profile"):
+        # Handle missing user, unauthenticated, or missing profile gracefully
+        if not user or not user.is_authenticated:
             return {"currency": obj.currency, "amount": obj.balance}
 
-        pref = user.profile.preferred_currency
-        if pref == obj.currency:
+        profile = getattr(user, "profile", None)
+        if not profile:
+            return {"currency": obj.currency, "amount": obj.balance}
+
+        pref = getattr(profile, "preferred_currency", None)
+        if not pref or pref == obj.currency:
             return {"currency": obj.currency, "amount": obj.balance}
 
         amount = obj.balance
@@ -277,11 +281,14 @@ class BillPaymentSerializer(serializers.ModelSerializer):
     """
     Create/list bill payments for the authenticated user.
     User is injected via HiddenField; account queryset is user-scoped.
+    Supports idempotency_key for double-submit prevention.
     """
 
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
     account = serializers.PrimaryKeyRelatedField(
         queryset=Account.objects.none())
+    idempotency_key = serializers.CharField(
+        max_length=64, required=False, allow_blank=True, allow_null=True)
 
     amount = serializers.DecimalField(max_digits=12,
                                       decimal_places=2,
@@ -299,6 +306,7 @@ class BillPaymentSerializer(serializers.ModelSerializer):
             "amount",
             "currency",
             "status",
+            "idempotency_key",
         ]
         read_only_fields = ("amount", "currency", "status")
 
@@ -327,6 +335,15 @@ class BillPaymentSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        # Check for existing payment with same idempotency_key
+        idem = validated_data.get("idempotency_key") or None
+        if idem:
+            existing = BillPayment.objects.filter(idempotency_key=idem).first()
+            if existing:
+                self.created = False
+                return existing  # Return existing payment, no duplicate
+
+        self.created = True
         bill_payment = super().create(validated_data)
         # Immediately settle the bill; pay() will raise on insufficient funds.
         bill_payment.pay()

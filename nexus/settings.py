@@ -6,15 +6,23 @@ Security defaults favor production; local development toggles are driven by env.
 from datetime import timedelta
 from pathlib import Path
 import os
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
 # --------------------
 # BASE / DEBUG / SECRET
 # --------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Use env in prod; fall back to current key to avoid breaking local dev
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-x@hsf*xa)67w93ndtsx$oc*&mh5xs^f)@@g5&3*1dyl2=q@g+@")
+# SECURITY WARNING: Never commit real secrets! Use environment variables.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if os.environ.get("DJANGO_DEBUG", "False").lower() == "true":
+        # Only allow insecure key in DEBUG mode for local development
+        SECRET_KEY = "django-insecure-development-only-key-do-not-use-in-production"
+    else:
+        raise ValueError("DJANGO_SECRET_KEY environment variable is required in production")
 
 IPINFO_TOKEN = os.environ.get("IPINFO_TOKEN", "")
 
@@ -109,7 +117,6 @@ INSTALLED_APPS = [
     "axes",
     # django-cleanup MUST be last
     "django_cleanup.apps.CleanupConfig",
-    # "risk.apps.RiskConfig",
     "business.apps.BusinessConfig",
 ]
 
@@ -336,7 +343,7 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
-SOCIAL_ACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT: True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
@@ -358,13 +365,18 @@ DJOSER = {
     },
 }
 
+# SECURITY WARNING: Use environment variables for email credentials!
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() == "true"
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "nexusbank49@gmail.com")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "olvhyvasmjcxxfat")
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
+    if DEBUG:
+        # Use console backend for local development if no credentials
+        EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or "noreply@nexus-banking.com"
 
 AXES_FAILURE_LIMIT = 5  # lock after 5 tries
 AXES_LOCK_OUT_AT_FAILURE = True
