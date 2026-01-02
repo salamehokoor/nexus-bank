@@ -101,3 +101,131 @@ class MetricsSignalTests(TransactionTestCase):
         self.a3.refresh_from_db()
         self.assertEqual(self.a1.balance, Decimal("190.00"))
         self.assertEqual(self.a3.balance, Decimal("90.00"))
+
+
+class AIBusinessAdvisorTests(TransactionTestCase):
+    """
+    Tests for the AI Business Advisor endpoint.
+
+    These tests verify:
+    - Missing API key returns 200 with null ai_analysis
+    - Persistence of insights works correctly
+    - Admin-only access control
+    """
+
+    def setUp(self):
+        self.User = get_user_model()
+        # Use a specific test date to avoid conflicts
+        self.test_date = date(2025, 6, 15)
+        # Create admin user
+        self.admin_user = self.User.objects.create_user(
+            email="admin@example.com",
+            password="adminpass",
+            is_staff=True,
+            is_superuser=True,
+        )
+        # Create regular user
+        self.regular_user = self.User.objects.create_user(
+            email="user@example.com",
+            password="userpass",
+        )
+        # Create some metrics data - use get_or_create to avoid conflicts
+        DailyBusinessMetrics.objects.get_or_create(
+            date=self.test_date,
+            defaults={
+                "new_users": 10,
+                "total_users": 100,
+                "active_users": 50,
+                "total_transactions_success": 25,
+                "total_transactions_failed": 2,
+                "fee_revenue": Decimal("50.00"),
+                "net_revenue": Decimal("50.00"),
+                "profit": Decimal("50.00"),
+            }
+        )
+
+
+    def test_missing_api_key_returns_200_with_null_analysis(self):
+        """
+        When GEMINI_API_KEY is missing, endpoint returns 200 with ai_analysis=null.
+        """
+        from django.test import override_settings
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+
+        with override_settings(GEMINI_API_KEY=None):
+            response = client.post(
+                "/business/ai/advisor/",
+                {"period_type": "daily", "date": str(self.test_date)},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data.get("ai_analysis"))
+        self.assertIn("report_text", response.data)
+        self.assertIn("report_json", response.data)
+
+    def test_persistence_creates_daily_insight(self):
+        """
+        The endpoint should create/update DailyAIInsight records.
+        """
+        from django.test import override_settings
+        from rest_framework.test import APIClient
+        from business.models import DailyAIInsight
+
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+
+        with override_settings(GEMINI_API_KEY=None):
+            response = client.post(
+                "/business/ai/advisor/",
+                {"period_type": "daily", "date": str(self.test_date)},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+
+        # Check persistence
+        insight = DailyAIInsight.objects.filter(date=self.test_date).first()
+        self.assertIsNotNone(insight)
+        self.assertIsNone(insight.ai_output)  # No API key
+        self.assertEqual(insight.model_name, "gemini-2.5-flash")
+        self.assertIn("NEXUS BANK", insight.report_text)
+
+    def test_admin_only_access(self):
+        """
+        Regular users should not be able to access the endpoint.
+        """
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        client.force_authenticate(user=self.regular_user)
+
+        response = client.post(
+            "/business/ai/advisor/",
+            {"period_type": "daily", "date": str(self.test_date)},
+            format="json",
+        )
+
+        # Should return 403 Forbidden for non-admin users
+        self.assertEqual(response.status_code, 403)
+
+    def test_unauthenticated_access_denied(self):
+        """
+        Unauthenticated requests should be denied.
+        """
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+
+        response = client.post(
+            "/business/ai/advisor/",
+            {"period_type": "daily", "date": str(self.test_date)},
+            format="json",
+        )
+
+        # Should return 401 Unauthorized
+        self.assertEqual(response.status_code, 401)
+

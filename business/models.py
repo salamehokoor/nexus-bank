@@ -310,3 +310,82 @@ class DailyActiveUser(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id} on {self.date}"
+
+
+class DailyAIInsight(TimeStampedModel):
+    """
+    Stores daily AI-generated business insights.
+    The AI Business Advisor is READ-ONLY and provides decision support only.
+    """
+    date = models.DateField(unique=True)
+    report_text = models.TextField(
+        help_text="Deterministic business report text (human-readable)"
+    )
+    report_json = models.JSONField(
+        default=dict,
+        help_text="Structured metrics summary for AI context"
+    )
+    ai_output = models.TextField(
+        null=True,
+        blank=True,
+        help_text="AI-generated analysis (null if API unavailable)"
+    )
+    model_name = models.CharField(
+        max_length=64,
+        default="gemini-2.5-flash",
+        help_text="AI model used for analysis"
+    )
+
+    class Meta:
+        ordering = ["-date"]
+        indexes = [
+            models.Index(fields=["date"]),
+            models.Index(fields=["-date"]),
+        ]
+        verbose_name = "Daily AI Insight"
+        verbose_name_plural = "Daily AI Insights"
+
+    def __str__(self) -> str:
+        status = "analyzed" if self.ai_output else "pending"
+        return f"AI Insight {self.date} ({status})"
+
+
+class MonthlyAIInsight(TimeStampedModel):
+    """
+    Stores monthly AI-generated business insights.
+    The AI Business Advisor is READ-ONLY and provides decision support only.
+    """
+    month = models.DateField(
+        unique=True,
+        help_text="First day of the month"
+    )
+    report_text = models.TextField(
+        help_text="Deterministic business report text (human-readable)"
+    )
+    report_json = models.JSONField(
+        default=dict,
+        help_text="Structured metrics summary for AI context"
+    )
+    ai_output = models.TextField(
+        null=True,
+        blank=True,
+        help_text="AI-generated analysis (null if API unavailable)"
+    )
+    model_name = models.CharField(
+        max_length=64,
+        default="gemini-2.5-flash",
+        help_text="AI model used for analysis"
+    )
+
+    class Meta:
+        ordering = ["-month"]
+        indexes = [
+            models.Index(fields=["month"]),
+            models.Index(fields=["-month"]),
+        ]
+        verbose_name = "Monthly AI Insight"
+        verbose_name_plural = "Monthly AI Insights"
+
+    def __str__(self) -> str:
+        status = "analyzed" if self.ai_output else "pending"
+        return f"AI Insight {self.month.strftime('%Y-%m')} ({status})"

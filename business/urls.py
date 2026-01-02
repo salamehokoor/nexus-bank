@@ -12,6 +12,7 @@ from .views import (
     ActiveUsersView,
     BusinessOverviewView,
 )
+from .views_ai import AIBusinessAdvisorView
 
 urlpatterns = [
     path("daily/", DailyMetricsView.as_view(), name="business-daily"),
@@ -24,4 +25,8 @@ urlpatterns = [
     path("active/", ActiveUsersView.as_view(), name="business-active"),
     path("overview/", BusinessOverviewView.as_view(),
          name="business-overview"),
+    # AI Business Advisor (admin-only, read-only decision support)
+    path("ai/advisor/", AIBusinessAdvisorView.as_view(),
+         name="ai-business-advisor"),
 ]
+

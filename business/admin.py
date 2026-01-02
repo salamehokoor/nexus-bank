@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.http import HttpResponse
 
 from .models import (DailyBusinessMetrics, CountryUserMetrics, CurrencyMetrics,
-                     DailyActiveUser)
+                     DailyActiveUser, DailyAIInsight, MonthlyAIInsight)
 
 
 def export_as_csv(modeladmin, request, queryset):
@@ -71,3 +71,36 @@ class DailyActiveUserAdmin(admin.ModelAdmin):
     list_display = ("date", "user")
     ordering = ("-date", )
     search_fields = ("user__email", )
+
+
+@admin.register(DailyAIInsight)
+class DailyAIInsightAdmin(admin.ModelAdmin):
+    """Admin for daily AI-generated business insights."""
+    list_display = ("date", "model_name", "has_ai_output", "created_at", "updated_at")
+    ordering = ("-date",)
+    list_filter = ("model_name",)
+    search_fields = ("date",)
+    date_hierarchy = "date"
+    readonly_fields = ("created_at", "updated_at")
+
+    def has_ai_output(self, obj):
+        return bool(obj.ai_output)
+    has_ai_output.boolean = True
+    has_ai_output.short_description = "AI Analyzed"
+
+
+@admin.register(MonthlyAIInsight)
+class MonthlyAIInsightAdmin(admin.ModelAdmin):
+    """Admin for monthly AI-generated business insights."""
+    list_display = ("month", "model_name", "has_ai_output", "created_at", "updated_at")
+    ordering = ("-month",)
+    list_filter = ("model_name",)
+    search_fields = ("month",)
+    date_hierarchy = "month"
+    readonly_fields = ("created_at", "updated_at")
+
+    def has_ai_output(self, obj):
+        return bool(obj.ai_output)
+    has_ai_output.boolean = True
+    has_ai_output.short_description = "AI Analyzed"
+

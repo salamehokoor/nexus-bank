@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0037_alter_card_cvv_alter_card_expiration_date'),
+        ('api', '0001_initial'),
     ]
 
     operations = [

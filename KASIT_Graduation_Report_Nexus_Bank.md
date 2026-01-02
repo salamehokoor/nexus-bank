@@ -269,16 +269,20 @@ The primary objectives of this graduation project are:
 
 **In Scope:**
 - User registration, authentication, and session management
+- Two-Factor Authentication (2FA) with email-based OTP verification
 - Account creation and management with multiple currency support
 - Internal and external fund transfers with atomic balance updates
 - Bill payment processing
+- Real-time WebSocket notifications for transactions and security alerts
 - Business intelligence metrics and reporting
 - Security anomaly detection and incident logging
+- AI-powered security incident analysis (configuration required)
 
 **Limitations:**
 - The system does not integrate with actual payment processors or banking networks
-- Real-time notifications (WebSockets) are not implemented
+- AI incident analysis requires external API key configuration (GEMINI_API_KEY)
 - Background task processing (Celery) is deferred to future work
+- Rate limiting is architecturally supported but not configured in the current deployment
 
 ### 1.5 Report Organization
 
@@ -340,9 +344,11 @@ The Nexus Bank backend employs a three-tier modular architecture:
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      DATABASE LAYER                             │
-│                 PostgreSQL with Row Locking                     │
+│           SQLite (dev) / PostgreSQL (prod) with Locking         │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+> **Note:** The development environment uses SQLite for simplicity. Production deployment should configure PostgreSQL for improved concurrency handling.
 
 #### Module Responsibilities
 
@@ -453,17 +459,25 @@ The system implements JWT-based authentication using `djangorestframework-simple
 
 ### 2.6 Security Design Patterns
 
-#### 2.6.1 Rate Limiting
+#### 2.6.1 Rate Limiting (Recommended Configuration)
+
+Rate limiting is architecturally supported by Django REST Framework. For production deployment, the following configuration is recommended:
 
 ```python
+# Recommended production configuration (not active in development)
 REST_FRAMEWORK = {
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/day',
         'user': '1000/day',
-        'login': '5/min',
     }
 }
 ```
+
+> **Implementation Note:** Rate limiting is not enabled in the current development configuration to facilitate testing. Production deployment should activate these throttle classes.
 
 #### 2.6.2 Anomaly Detection Rules
 
@@ -486,9 +500,9 @@ REST_FRAMEWORK = {
 | Component | Technology | Version |
 |-----------|------------|---------|
 | Language | Python | 3.11+ |
-| Framework | Django | 4.x |
+| Framework | Django | 5.2+ |
 | API Framework | Django REST Framework | 3.14+ |
-| Database | PostgreSQL | 14+ |
+| Database | SQLite (dev) / PostgreSQL (prod) | 14+ |
 | Authentication | djangorestframework-simplejwt | 5.x |
 | Documentation | drf-spectacular | 0.26+ |
 | Security | django-axes | 6.x |
@@ -765,7 +779,245 @@ class AccountsListCreateView(generics.ListCreateAPIView):
         return Account.objects.filter(user=self.request.user)
 ```
 
+#### 3.5.3 Two-Factor Authentication (2FA)
+
+The system implements a secure two-step login process to mitigate credential theft:
+
+**Step 1: Credential Validation (`POST /auth/login/init/`)**
+- Validates email and password credentials
+- Generates a 6-digit OTP with 5-minute expiry
+- Sends OTP to the user's registered email address
+
+**Step 2: OTP Verification (`POST /auth/login/verify/`)**
+- Validates the submitted OTP code
+- Returns JWT access and refresh tokens upon success
+
+```python
+class OTPVerification(models.Model):
+    class Purpose(models.TextChoices):
+        LOGIN = 'LOGIN', 'Login verification'
+        TRANSACTION = 'TRANSACTION', 'Transaction verification'
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    code = models.CharField(max_length=6)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices)
+    expires_at = models.DateTimeField()
+    is_verified = models.BooleanField(default=False)
+```
+
+### 3.6 Real-Time Notification System
+
+The system implements WebSocket-based real-time notifications using Django Channels.
+
+#### 3.6.1 Architecture
+
+- ASGI application configured in `nexus/asgi.py`
+- WebSocket consumer in `api/consumers.py`
+- JWT authentication via query string parameter
+
+#### 3.6.2 Notification Types
+
+| Type | Trigger | Recipients |
+|------|---------|------------|
+| DEBIT | Transaction creation | Sender |
+| CREDIT | Transaction creation | Receiver |
+| ADMIN_ALERT | Incident creation (medium/high/critical) | Staff users |
+
+#### 3.6.3 Implementation
+
+Notifications are triggered by Django signals:
+
+```python
+@receiver(post_save, sender=Transaction)
+def notify_transaction_participants(sender, instance, created, **kwargs):
+    if not created or instance.status != Transaction.Status.SUCCESS:
+        return
+    
+    # Create Notification DB records
+    Notification.objects.create(user_id=sender_user_id, message=debit_msg)
+    
+    # Push via WebSocket
+    async_to_sync(channel_layer.group_send)(sender_group, debit_message)
+```
+
+### 3.7 AI-Powered Security Analysis
+
+#### 3.7.1 Implementation Overview
+
+The risk module includes integration with Google Gemini AI to analyze high-severity security incidents:
+
+```python
+# risk/ai.py
+def analyze_incident(incident):
+    if not settings.GEMINI_API_KEY:
+        return None  # Gracefully skip if not configured
+    
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
+    return response.text
+```
+
+#### 3.7.2 Trigger Mechanism
+
+AI analysis is triggered automatically via Django signals for high-severity incidents:
+
+```python
+@receiver(post_save, sender=Incident)
+def trigger_ai_analysis(sender, instance, created, **kwargs):
+    if instance.severity in ("high", "critical"):
+        analysis = analyze_incident(instance)
+        sender.objects.filter(pk=instance.pk).update(gemini_analysis=analysis)
+```
+
+> **Configuration Note:** This feature requires the `GEMINI_API_KEY` environment variable to be set. Without configuration, the system gracefully skips AI analysis without affecting core functionality.
+
+### 3.8 AI Business Advisor (Read-Only Decision Support)
+
+#### 3.8.1 Purpose
+
+The AI Business Advisor provides **administrator-facing decision support** for analyzing aggregated business metrics. This feature is designed to:
+
+- Explain significant performance changes (profit, revenue, user activity, transactions)
+- Identify potential business risks from aggregated data patterns
+- Provide descriptive recommendations that **require human review** before any action
+
+> **Critical Limitation:** The AI Business Advisor is strictly READ-ONLY. It does NOT modify balances, transactions, fees, risk policies, or any other system data.
+
+#### 3.8.2 Data Sources
+
+The AI Business Advisor operates exclusively on **aggregated metrics** from:
+
+| Data Source | Description |
+|-------------|-------------|
+| `DailyBusinessMetrics` | Daily KPIs (users, transactions, revenue, profit) |
+| `WeeklySummary` | Weekly aggregated summaries |
+| `MonthlySummary` | Monthly aggregated summaries |
+| `CountryUserMetrics` | Per-country user and transaction breakdowns |
+| `CurrencyMetrics` | Per-currency transaction volumes |
+
+The AI never accesses individual user data, transaction details, or account balances.
+
+#### 3.8.3 AI Capabilities
+
+The AI Business Advisor provides:
+
+| Capability | Description |
+|------------|-------------|
+| Performance Explanation | Natural-language interpretation of metric trends |
+| Risk Signal Detection | Identification of loss days, high failure rates, efficiency issues |
+| Descriptive Recommendations | Suggestions for administrators to investigate (NOT automated actions) |
+
+**Example Output Format:**
+```
+📊 Performance Summary
+[Natural-language explanation of key metrics]
+
+🔍 Key Observations
+[Data-backed insights from the metrics]
+
+⚠️ Risk Signals
+[Identified patterns requiring attention]
+
+💡 Recommendations for Review
+[Suggestions for human administrators to investigate]
+```
+
+#### 3.8.4 Safety & Limitations
+
+The AI Business Advisor operates under strict constraints:
+
+**The AI Does NOT:**
+- Modify account balances or transactions
+- Change fee structures or policies
+- Execute automated decisions
+- Perform real-time transaction intervention
+- Implement predictive modeling (future work)
+- Control, enforce, or execute any system actions
+
+**All AI recommendations are:**
+- Descriptive only
+- Subject to human review
+- Non-binding suggestions
+- Based solely on provided aggregated data
+
+#### 3.8.5 Configuration Requirements
+
+| Requirement | Description |
+|-------------|-------------|
+| API Key | `GEMINI_API_KEY` environment variable must be set |
+| Model | Google Gemini (`gemini-2.5-flash`) |
+| Access Control | Admin/superuser only (`IsAdminUser` permission) |
+
+**Failure Behavior:**
+- If `GEMINI_API_KEY` is not configured, the system returns `ai_analysis: null`
+- If the Gemini API fails, the system returns `ai_analysis: null`
+- The endpoint always returns HTTP 200 (no 500 errors exposed to clients)
+- Core banking operations are unaffected by AI availability
+
+#### 3.8.6 Persistence & Audit
+
+AI outputs are persisted for audit and review purposes:
+
+| Model | Purpose |
+|-------|---------|
+| `DailyAIInsight` | Stores daily AI analysis with report text, JSON, and AI output |
+| `MonthlyAIInsight` | Stores monthly AI analysis with report text, JSON, and AI output |
+
+Both models include:
+- Deterministic report text (human-readable)
+- Structured JSON metrics summary
+- AI-generated analysis (nullable)
+- Model name used for generation
+- Creation and update timestamps
+
+#### 3.8.7 API Endpoint
+
+| Endpoint | Method | Access | Description |
+|----------|--------|--------|-------------|
+| `/business/ai/advisor/` | POST | Admin only | Generate AI business insights |
+
+**Request Schema:**
+```json
+{
+  "period_type": "daily",
+  "date": "2025-12-04"
+}
+```
+or
+```json
+{
+  "period_type": "monthly",
+  "month": "2025-12-01"
+}
+```
+
+**Response Schema:**
+```json
+{
+  "period_type": "daily",
+  "date_or_month": "2025-12-04",
+  "model": "gemini-2.5-flash",
+  "report_text": "...",
+  "report_json": {...},
+  "ai_analysis": "..." | null
+}
+```
+
+#### 3.8.8 Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `business/ai.py` | Core Gemini integration (defensive, returns None on failure) |
+| `business/reporting.py` | Report generation services (text and JSON) |
+| `business/views_ai.py` | API endpoint view |
+| `business/serializers_ai.py` | Request/response serializers |
+| `business/models.py` | `DailyAIInsight`, `MonthlyAIInsight` models |
+
 ---
+
 
 ## CHAPTER 4: TESTING AND QUALITY ASSURANCE
 
@@ -783,7 +1035,8 @@ The project employs a multi-layered testing strategy:
 |-----------|------------|-------|--------|
 | `api/tests.py` | 17 | 333 | ✅ Pass |
 | `business/tests.py` | 3 | 104 | ✅ Pass |
-| `tests/test_audit_edge_cases.py` | 25+ | 450+ | ✅ Pass |
+
+> **Total:** 20 test methods covering core banking operations, metrics updates, and idempotency handling.
 
 #### Key Test Categories
 
@@ -868,10 +1121,21 @@ This graduation project successfully achieved its primary objectives:
 
 | Enhancement | Priority | Description |
 |-------------|----------|-------------|
-| Background Tasks | High | Integrate Celery for async processing |
-| Real-Time Notifications | Medium | WebSocket alerts for transactions |
-| Machine Learning | Medium | ML-based fraud detection |
+| Background Tasks | High | Integrate Celery for async email and processing |
+| Rate Limiting Activation | High | Enable throttle classes for production |
+| Transaction OTP Enforcement | Medium | Require OTP for high-value transfers |
+| Machine Learning | Medium | ML-based fraud prediction models |
 | Mobile SDK | Low | Native iOS/Android libraries |
+
+#### 5.3.1 AI-Driven Business Intelligence (Planned)
+
+The business intelligence module (`business/`) currently provides historical metrics aggregation using conventional SQL queries and signal-driven updates. Future versions may incorporate:
+
+- **Predictive Transaction Analytics**: Forecasting transaction volumes and revenue
+- **Customer Behavior Analysis**: Identifying usage patterns and segment trends
+- **Fraud Prediction Models**: Machine learning-based anomaly scoring
+
+These features are architecturally supported by the existing data models but are not implemented in the current version.
 
 ### 5.4 Concluding Remarks
 
