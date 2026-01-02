@@ -1,6 +1,11 @@
 """
 Root URL configuration for the Nexus project.
 Includes admin, auth, API docs, risk, business, and core API routes.
+
+AUTHENTICATION FLOW:
+- 2FA Login: POST /auth/login/init/ → POST /auth/login/verify/
+- Token Refresh: POST /auth/jwt/refresh/
+- Social Login: /accounts/google/login/
 """
 # nexus/urls.py
 from django.contrib import admin
@@ -12,7 +17,7 @@ from drf_spectacular.views import (
 )
 
 from api.views import LogoutView
-from risk.views import LoggingTokenObtainPairView, LoggingTokenRefreshView
+from risk.views import LoggingTokenRefreshView
 
 urlpatterns = [
     # Admin
@@ -21,23 +26,29 @@ urlpatterns = [
 
     # Allauth UI (including Google login)
     path('accounts/', include('allauth.urls')),
-    #Now allauth exposes endpoints like:
-    #/accounts/login/
-    #/accounts/logout/
-    #/accounts/google/login/
-    #/accounts/google/login/callback/
+    # Allauth exposes endpoints like:
+    # /accounts/login/
+    # /accounts/logout/
+    # /accounts/google/login/
+    # /accounts/google/login/callback/
 
-    # Djoser / JWT routes
-    path("auth/jwt/create/",
-         LoggingTokenObtainPairView.as_view(),
-         name="jwt-create-logging"),
-    path("auth/jwt/refresh/",
+    # ==========================================================================
+    # JWT Token Management (2FA login endpoints are in api/urls.py)
+    # ==========================================================================
+    # REMOVED: LoggingTokenObtainPairView - use 2FA flow via /auth/login/init/ + /auth/login/verify/
+    # REMOVED: djoser.urls.jwt - exposes TokenObtainPairView which bypasses 2FA
+    # REMOVED: djoser.urls.authtoken - exposes /auth/token/login/ which bypasses 2FA
+    
+    # Token refresh - extends session without re-authentication
+    path("auth/token/refresh/",
          LoggingTokenRefreshView.as_view(),
-         name="jwt-refresh-logging"),
+         name="token-refresh"),
+    
+    # Logout - marks user offline
     path("auth/logout/", LogoutView.as_view(), name="logout"),
+    
+    # Djoser routes for registration and password management ONLY (no login)
     path('auth/', include('djoser.urls')),
-    path('auth/', include('djoser.urls.authtoken')),
-    path('auth/', include('djoser.urls.jwt')),
 
     # ✅ API schema and docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
@@ -56,3 +67,4 @@ urlpatterns = [
     ###
     path('', include('api.urls')),
 ]
+

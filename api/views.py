@@ -1,12 +1,14 @@
 """
-API views for accounts, cards, transfers, bill payments, and social login.
+API views for accounts, cards, transfers, bill payments, notifications, 2FA auth, and social login.
 All endpoints enforce authentication and ownership scoping where applicable.
 """
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
+from django.core.mail import send_mail
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
+from drf_spectacular.utils import extend_schema, OpenApiResponse
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -17,15 +19,22 @@ from risk.transaction_logging import (
     log_failed_transfer_attempt,
     log_transaction_event,
 )
-from .models import Account, BillPayment, Card, Transaction
+from .models import Account, BillPayment, Card, Notification, OTPVerification, Transaction
 from .serializers import (
     AccountSerializer,
     BillPaymentSerializer,
     CardSerializer,
     ExternalTransferSerializer,
     InternalTransferSerializer,
+    LoginStepOneSerializer,
+    LoginStepTwoSerializer,
+    NotificationSerializer,
+    OTPSentResponseSerializer,
+    TokenResponseSerializer,
     TransactionSerializer,
 )
+
+User = get_user_model()
 
 User = get_user_model()
 
@@ -285,3 +294,205 @@ class BillerListView(generics.ListAPIView):
     def get_queryset(self):
         from .models import Biller
         return Biller.objects.all().order_by("name")
+
+
+class NotificationListView(generics.ListAPIView):
+    """
+    GET /notifications/
+    Returns all notifications for the authenticated user, newest first.
+    Supports ?unread_only=true to filter unread notifications.
+    """
+
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Notification.objects.filter(user=self.request.user)
+        
+        # Optional filter for unread only
+        if self.request.query_params.get("unread_only", "").lower() == "true":
+            qs = qs.filter(is_read=False)
+        
+        # Filter by notification type if provided
+        notification_type = self.request.query_params.get("type")
+        if notification_type:
+            qs = qs.filter(notification_type=notification_type)
+        
+        return qs.order_by("-created_at")
+
+
+class NotificationMarkReadView(generics.UpdateAPIView):
+    """
+    PATCH /notifications/<pk>/read/
+    Marks a specific notification as read.
+    """
+
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user)
+
+    def patch(self, request, *args, **kwargs):
+        notification = self.get_object()
+        notification.is_read = True
+        notification.save(update_fields=["is_read", "updated_at"])
+        return Response(self.get_serializer(notification).data)
+
+
+# =============================================================================
+# TWO-FACTOR AUTHENTICATION VIEWS
+# =============================================================================
+
+
+class LoginInitView(APIView):
+    """
+    Step 1 of 2FA Login: Validate credentials and send OTP via email.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        summary="Step 1: Login Initialization",
+        description="Validate email/password credentials and send OTP code via email. "
+                    "This is the first step of the 2FA login flow.",
+        request=LoginStepOneSerializer,
+        responses={
+            200: OTPSentResponseSerializer,
+            400: OpenApiResponse(description="Missing email or password"),
+            401: OpenApiResponse(description="Invalid credentials or disabled account"),
+        },
+        tags=["Authentication"],
+    )
+    def post(self, request):
+        serializer = LoginStepOneSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data["email"].strip().lower()
+        password = serializer.validated_data["password"]
+
+        # Authenticate user with credentials
+        user = authenticate(request, email=email, password=password)
+        
+        if user is None:
+            return Response(
+                {"detail": "Invalid credentials."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if not user.is_active:
+            return Response(
+                {"detail": "Account is disabled."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Generate LOGIN OTP
+        otp = OTPVerification.generate(user, OTPVerification.Purpose.LOGIN)
+
+        # Send OTP via email
+        send_mail(
+            subject="Nexus Bank - Login Verification Code",
+            message=f"Your login verification code is: {otp.code}\n\nThis code expires in 5 minutes.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+
+        return Response(
+            {"detail": "OTP sent to email"},
+            status=status.HTTP_200_OK,
+        )
+
+
+
+class LoginVerifyView(APIView):
+    """
+    Step 2 of 2FA Login: Verify OTP and return JWT tokens.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        summary="Step 2: Login Verification",
+        description="Verify the OTP code sent via email and return JWT access/refresh tokens. "
+                    "This completes the 2FA login flow.",
+        request=LoginStepTwoSerializer,
+        responses={
+            200: TokenResponseSerializer,
+            400: OpenApiResponse(description="Missing email or code"),
+            401: OpenApiResponse(description="Invalid email, code, or expired OTP"),
+        },
+        tags=["Authentication"],
+    )
+    def post(self, request):
+        serializer = LoginStepTwoSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"].strip().lower()
+        code = serializer.validated_data["code"].strip()
+
+        # Find the user
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Invalid email or code."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Verify OTP code
+        if not OTPVerification.verify_code(user, code, OTPVerification.Purpose.LOGIN):
+            return Response(
+                {"detail": "Invalid or expired code."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Mark user as online
+        User.objects.filter(pk=user.pk).update(is_online=True)
+
+        # Generate JWT tokens - explicitly converting to string
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        })
+
+
+class GenerateTransactionOTPView(APIView):
+    """
+    Generate OTP for high-value transaction authorization (amounts > 500).
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        summary="Generate Transaction OTP",
+        description="Request an OTP code for authorizing high-value transfers (> 500). "
+                    "The code is sent to the authenticated user's email.",
+        request=None,
+        responses={
+            200: OTPSentResponseSerializer,
+            401: OpenApiResponse(description="Authentication required"),
+        },
+        tags=["Authentication"],
+    )
+    def post(self, request):
+        user = request.user
+
+        # Generate TRANSACTION OTP
+        otp = OTPVerification.generate(user, OTPVerification.Purpose.TRANSACTION)
+
+        # Send OTP via email
+        send_mail(
+            subject="Nexus Bank - Transaction Authorization Code",
+            message=f"Your transaction authorization code is: {otp.code}\n\nThis code expires in 5 minutes.\n\nIf you did not request this code, please contact support immediately.",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+
+        return Response(
+            {"detail": "OTP sent to email"},
+            status=status.HTTP_200_OK,
+        )

@@ -1,6 +1,6 @@
 """
-Serializers for API resources: users, accounts/cards, transfers, and bills.
-Includes helper masking and per-request ownership scoping for safety.
+Serializers for API resources: users, accounts/cards, transfers, bills, and notifications.
+Includes helper masking, per-request ownership scoping, and OTP validation for high-value transfers.
 """
 
 from decimal import Decimal
@@ -10,7 +10,10 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .convert_currency import eur_to_jod, jod_to_eur, jod_to_usd, usd_to_jod
-from .models import Account, BillPayment, Biller, Card, Transaction, User
+from .models import Account, BillPayment, Biller, Card, Notification, OTPVerification, Transaction, User
+
+# Threshold for requiring OTP on transfers
+HIGH_VALUE_TRANSFER_THRESHOLD = Decimal("500.00")
 
 
 class UserCreateSerializer(BaseUserCreateSerializer):
@@ -175,6 +178,7 @@ class InternalTransferSerializer(serializers.Serializer):
     """
     Transfer between two accounts owned by the authenticated user.
     Sender/receiver querysets are restricted per-request for safety.
+    OTP required for amounts > 500.
     """
 
     sender_account = serializers.PrimaryKeyRelatedField(
@@ -186,6 +190,8 @@ class InternalTransferSerializer(serializers.Serializer):
                                       min_value=Decimal("0.01"))
     idempotency_key = serializers.CharField(
         max_length=64, required=False, allow_blank=True, allow_null=True)
+    otp_code = serializers.CharField(
+        max_length=6, required=False, write_only=True, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -200,6 +206,28 @@ class InternalTransferSerializer(serializers.Serializer):
                 "receiver_account"].account_number:
             raise serializers.ValidationError(
                 "Cannot transfer to the same account.")
+        
+        # OTP validation for high-value transfers
+        amount = attrs.get("amount", Decimal("0"))
+        if amount > HIGH_VALUE_TRANSFER_THRESHOLD:
+            otp_code = attrs.get("otp_code", "").strip()
+            if not otp_code:
+                raise serializers.ValidationError({
+                    "otp_code": f"OTP required for amounts > {HIGH_VALUE_TRANSFER_THRESHOLD}"
+                })
+            
+            # Verify OTP
+            req = self.context.get("request")
+            if not req or not req.user:
+                raise serializers.ValidationError("Authentication required.")
+            
+            if not OTPVerification.verify_code(
+                req.user, otp_code, OTPVerification.Purpose.TRANSACTION
+            ):
+                raise serializers.ValidationError({
+                    "otp_code": "Invalid or expired OTP code."
+                })
+        
         return attrs
 
     def create(self, validated):
@@ -224,6 +252,7 @@ class ExternalTransferSerializer(serializers.Serializer):
     """
     Transfer from one of the user's accounts to another user's account_number.
     Sender queryset is restricted per-request; receiver is looked up by number.
+    OTP required for amounts > 500.
     """
 
     sender_account = serializers.PrimaryKeyRelatedField(
@@ -234,6 +263,8 @@ class ExternalTransferSerializer(serializers.Serializer):
                                       min_value=Decimal("0.01"))
     idempotency_key = serializers.CharField(
         max_length=64, required=False, allow_blank=True, allow_null=True)
+    otp_code = serializers.CharField(
+        max_length=6, required=False, write_only=True, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -257,6 +288,28 @@ class ExternalTransferSerializer(serializers.Serializer):
                 "Cannot transfer to the same account.")
 
         attrs["receiver_account"] = receiver
+        
+        # OTP validation for high-value transfers
+        amount = attrs.get("amount", Decimal("0"))
+        if amount > HIGH_VALUE_TRANSFER_THRESHOLD:
+            otp_code = attrs.get("otp_code", "").strip()
+            if not otp_code:
+                raise serializers.ValidationError({
+                    "otp_code": f"OTP required for amounts > {HIGH_VALUE_TRANSFER_THRESHOLD}"
+                })
+            
+            # Verify OTP
+            req = self.context.get("request")
+            if not req or not req.user:
+                raise serializers.ValidationError("Authentication required.")
+            
+            if not OTPVerification.verify_code(
+                req.user, otp_code, OTPVerification.Purpose.TRANSACTION
+            ):
+                raise serializers.ValidationError({
+                    "otp_code": "Invalid or expired OTP code."
+                })
+        
         return attrs
 
     def create(self, validated):
@@ -357,3 +410,75 @@ class BillerSerializer(serializers.ModelSerializer):
         model = Biller
         fields = ("id", "name", "fixed_amount")
         read_only_fields = fields
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """
+    Read-only serializer for user notifications.
+    Returns notification history ordered by newest first.
+    """
+
+    class Meta:
+        model = Notification
+        fields = [
+            "id",
+            "message",
+            "notification_type",
+            "is_read",
+            "related_transaction",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+# =============================================================================
+# TWO-FACTOR AUTHENTICATION SERIALIZERS
+# =============================================================================
+
+
+class LoginStepOneSerializer(serializers.Serializer):
+    """
+    Serializer for Step 1 of 2FA Login.
+    Validates email and password input for credential verification.
+    """
+    email = serializers.EmailField(
+        help_text="User's email address"
+    )
+    password = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+        help_text="User's password"
+    )
+
+
+class LoginStepTwoSerializer(serializers.Serializer):
+    """
+    Serializer for Step 2 of 2FA Login.
+    Validates email and OTP code for verification.
+    """
+    email = serializers.EmailField(
+        help_text="User's email address"
+    )
+    code = serializers.CharField(
+        max_length=6,
+        min_length=6,
+        help_text="6-digit OTP code sent via email"
+    )
+
+
+class TokenResponseSerializer(serializers.Serializer):
+    """
+    Response serializer for JWT token pair.
+    Used for Swagger documentation of login response.
+    """
+    access = serializers.CharField(help_text="JWT access token")
+    refresh = serializers.CharField(help_text="JWT refresh token")
+
+
+class OTPSentResponseSerializer(serializers.Serializer):
+    """
+    Response serializer for OTP generation endpoints.
+    """
+    detail = serializers.CharField(help_text="Status message")
+
+

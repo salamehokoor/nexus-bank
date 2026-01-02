@@ -1,6 +1,8 @@
 """
 Django signal handlers for authentication lifecycle and admin state changes.
 Hooks log events to the risk module for auditing and anomaly detection.
+Also sends real-time admin alerts for security incidents via WebSocket
+and creates Notification DB records for staff users.
 """
 # risk/signals.py
 from django.dispatch import receiver
@@ -8,12 +10,18 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.signals import (user_logged_in, user_login_failed as
                                          django_login_failed, user_logged_out)
 from django.db.models.signals import pre_save, post_save
+from django.utils import timezone
 from axes.signals import user_locked_out
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 from .auth_logging import log_auth_event
 from .account_logging import log_account_created
 from .models import Incident
 from .utils import _get_ip_from_request, get_country_from_ip
+
+# Import Notification model (circular import safe - imported at runtime)
+from api.models import Notification
 
 User = get_user_model()
 
@@ -152,3 +160,87 @@ def handle_admin_state_changes(sender, instance, created, **kwargs):
             severity="medium",
             details={"email": getattr(instance, "email", "")},
         )
+
+
+# ------------------------------
+# ADMIN ALERTS (Real-Time WebSocket + DB Notifications)
+# ------------------------------
+@receiver(post_save, sender=Incident)
+def notify_admins_on_incident(sender, instance, created, **kwargs):
+    """
+    Send real-time admin alerts via WebSocket for security incidents.
+    Also creates Notification DB records for all staff users.
+    Only triggers for medium, high, or critical severity incidents.
+    """
+    if not created:
+        return
+
+    # Only alert for significant severities
+    if instance.severity not in ("medium", "high", "critical"):
+        return
+
+    timestamp = timezone.now().isoformat()
+
+    # Build descriptive message from incident details
+    user_info = ""
+    if instance.user:
+        user_info = f" for User {instance.user.email}"
+    elif instance.attempted_email:
+        user_info = f" for {instance.attempted_email}"
+
+    message = f"{instance.event}{user_info}"
+
+    # ---------------------------------------------------------
+    # 1. Create Notification DB records for ALL staff users
+    # ---------------------------------------------------------
+    staff_users = User.objects.filter(is_staff=True)
+    notifications_to_create = [
+        Notification(
+            user=staff_user,
+            message=message,
+            notification_type=Notification.NotificationType.ADMIN_ALERT,
+        )
+        for staff_user in staff_users
+    ]
+    if notifications_to_create:
+        Notification.objects.bulk_create(notifications_to_create)
+
+    # ---------------------------------------------------------
+    # 2. Send WebSocket alert to admin_alerts group
+    # ---------------------------------------------------------
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        # Channel layer not configured (e.g., in tests without channels)
+        return
+
+    alert_message = {
+        "type": "admin_alert",
+        "severity": instance.severity.upper(),
+        "message": message,
+        "incident_id": instance.id,
+        "timestamp": timestamp,
+    }
+
+    async_to_sync(channel_layer.group_send)("admin_alerts", alert_message)
+
+
+@receiver(post_save, sender=Incident)
+def trigger_ai_analysis(sender, instance, created, **kwargs):
+    """
+    Triggers Gemini AI analysis for high-severity incidents.
+    """
+    if not created:
+        return
+
+    # Only analyze High or Critical incidents
+    if instance.severity not in ("high", "critical"):
+        return
+        
+    # Import here to avoid circular dependencies if any
+    from .ai import analyze_incident
+    
+    analysis = analyze_incident(instance)
+    if analysis:
+        # Use update() to bypass signals and avoid recursion or race conditions
+        sender.objects.filter(pk=instance.pk).update(gemini_analysis=analysis)
+

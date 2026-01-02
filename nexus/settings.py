@@ -85,6 +85,9 @@ CSRF_TRUSTED_ORIGINS = [
 # INSTALLED APPS
 # --------------------
 INSTALLED_APPS = [
+    # Daphne ASGI server (must be first for runserver override)
+    "daphne",
+
     # Django core
     # 'grappelli',
     "django.contrib.admin",
@@ -105,6 +108,9 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "djoser",
 
+    # Django Channels (WebSocket support)
+    "channels",
+
     # Docs, dev, CORS
     "drf_spectacular",
     "django_extensions",
@@ -112,7 +118,7 @@ INSTALLED_APPS = [
     "django_filters",
 
     # Your app(s)
-    "api",
+    "api.apps.ApiConfig",
     "risk.apps.RiskConfig",
     "axes",
     # django-cleanup MUST be last
@@ -162,6 +168,18 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "nexus.wsgi.application"
+ASGI_APPLICATION = "nexus.asgi.application"
+
+# --------------------
+# CHANNEL LAYERS (WebSocket)
+# --------------------
+# Using InMemoryChannelLayer for local development
+# For production, use Redis: channels_redis.core.RedisChannelLayer
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
+}
 
 # --------------------
 # DATABASE
@@ -230,6 +248,10 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS":
     "drf_spectacular.openapi.AutoSchema",
 
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+
     # 🔹 Global throttles
     "DEFAULT_THROTTLE_CLASSES": [
         "risk.throttling.LoggedAnonRateThrottle",
@@ -281,6 +303,11 @@ SPECTACULAR_SETTINGS = {
         "url": "/"
     }],
 }
+
+# --------------------
+# AI Risk Analysis (Gemini)
+# --------------------
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # drf-spectacular sometimes prints warnings during schema generation; on Windows
 # writing those to stderr can raise OSError. Silence the emitter to keep

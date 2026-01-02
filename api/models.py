@@ -1,9 +1,11 @@
 """
-Core banking models: users, accounts/cards, transactions, and bill payments.
+Core banking models: users, accounts/cards, transactions, bill payments, and OTP verification.
 Implements balance updates atomically and handles basic FX conversions.
 """
 
+import random
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import AbstractUser, BaseUserManager
@@ -413,3 +415,154 @@ class BillPayment(models.Model):
             self.status = 'PAID'
             super().save(update_fields=['status'])
             return tx
+
+
+class Notification(BaseModel):
+    """
+    Stores notification history for users.
+    Notifications are created by signals and can be retrieved via REST API.
+    """
+
+    class NotificationType(models.TextChoices):
+        TRANSACTION = "TRANSACTION", "Transaction"
+        SECURITY = "SECURITY", "Security"
+        ADMIN_ALERT = "ADMIN_ALERT", "Admin Alert"
+        BILL_PAYMENT = "BILL_PAYMENT", "Bill Payment"
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    message = models.TextField()
+    notification_type = models.CharField(
+        max_length=20,
+        choices=NotificationType.choices,
+        default=NotificationType.TRANSACTION,
+    )
+    is_read = models.BooleanField(default=False)
+
+    # Optional: link to related transaction for context
+    related_transaction = models.ForeignKey(
+        Transaction,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="notifications",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["user", "is_read"]),
+        ]
+
+    def __str__(self):
+        return f"{self.notification_type}: {self.message[:50]}"
+
+
+class OTPVerification(models.Model):
+    """
+    One-Time Password verification for 2FA.
+    Used for login verification and high-value transaction authorization.
+    """
+
+    class Purpose(models.TextChoices):
+        LOGIN = "LOGIN", "Login Verification"
+        TRANSACTION = "TRANSACTION", "Transaction Authorization"
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="otp_codes",
+    )
+    code = models.CharField(max_length=6)
+    purpose = models.CharField(
+        max_length=20,
+        choices=Purpose.choices,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_verified = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "purpose", "-created_at"]),
+            models.Index(fields=["code", "is_verified"]),
+        ]
+
+    def __str__(self):
+        return f"OTP {self.code} for {self.user.email} ({self.purpose})"
+
+    def is_valid(self) -> bool:
+        """Check if the OTP is still valid (not expired and not verified)."""
+        return (
+            not self.is_verified and
+            timezone.now() < self.expires_at
+        )
+
+    @classmethod
+    def generate(cls, user, purpose: str, validity_minutes: int = 5):
+        """
+        Generate a new OTP code for the user.
+        Invalidates all existing unused codes for the same purpose.
+        
+        Args:
+            user: The user to generate OTP for
+            purpose: LOGIN or TRANSACTION
+            validity_minutes: How long the code is valid (default 5 minutes)
+            
+        Returns:
+            OTPVerification instance with the new code
+        """
+        # Invalidate existing unused codes for this user/purpose
+        cls.objects.filter(
+            user=user,
+            purpose=purpose,
+            is_verified=False,
+        ).update(is_verified=True)  # Mark as verified to prevent reuse
+
+        # Generate 6-digit random code
+        code = "".join([str(random.randint(0, 9)) for _ in range(6)])
+        
+        # Create new OTP record
+        otp = cls.objects.create(
+            user=user,
+            code=code,
+            purpose=purpose,
+            expires_at=timezone.now() + timedelta(minutes=validity_minutes),
+        )
+        
+        return otp
+
+    @classmethod
+    def verify_code(cls, user, code: str, purpose: str) -> bool:
+        """
+        Verify an OTP code for a user.
+        
+        Args:
+            user: The user to verify OTP for
+            code: The 6-digit code to verify
+            purpose: LOGIN or TRANSACTION
+            
+        Returns:
+            True if code is valid, False otherwise
+        """
+        try:
+            otp = cls.objects.get(
+                user=user,
+                code=code,
+                purpose=purpose,
+                is_verified=False,
+            )
+            if otp.is_valid():
+                otp.is_verified = True
+                otp.save(update_fields=["is_verified"])
+                return True
+            return False
+        except cls.DoesNotExist:
+            return False
+
+

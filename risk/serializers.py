@@ -16,6 +16,7 @@ class IncidentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Incident
         fields = "__all__"
+        read_only_fields = ["gemini_analysis", "timestamp", "user"]
 
 
 class LoginEventSerializer(serializers.ModelSerializer):

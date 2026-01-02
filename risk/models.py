@@ -39,6 +39,8 @@ class Incident(models.Model):
         default="low",
     )
     details = models.JSONField(default=dict, blank=True)
+    # Stores the AI-generated course of action
+    gemini_analysis = models.TextField(blank=True, null=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
