@@ -329,8 +329,14 @@ def log_failed_transfer_attempt(
 
     # Balance anomaly: negative/insufficient attempts
     error_text = str(errors).lower()
-    if (amount is not None and amount
-            < 0) or "insufficient" in error_text or "balance" in error_text:
+    # Convert amount to Decimal for safe comparison (it may come as string from request data)
+    try:
+        amount_decimal = Decimal(str(amount)) if amount is not None else None
+        is_negative_amount = amount_decimal is not None and amount_decimal < 0
+    except (ValueError, TypeError):
+        is_negative_amount = False
+    
+    if is_negative_amount or "insufficient" in error_text or "balance" in error_text:
         Incident.objects.create(
             user=user if getattr(user, "is_authenticated", False) else None,
             ip=ip,

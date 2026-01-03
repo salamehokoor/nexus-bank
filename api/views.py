@@ -23,7 +23,9 @@ from .models import Account, BillPayment, Card, Notification, OTPVerification, T
 from .serializers import (
     AccountSerializer,
     BillPaymentSerializer,
+    BillPaymentSerializer,
     CardSerializer,
+    CardUpdateSerializer,
     ExternalTransferSerializer,
     InternalTransferSerializer,
     LoginStepOneSerializer,
@@ -119,6 +121,23 @@ class AccountCardsListCreateView(generics.ListCreateAPIView):
                                     account_number=acct_num,
                                     user=self.request.user)
         serializer.save(account=account)
+
+
+class CardDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET /cards/<id>/         -> Retrieve card details
+    PATCH /cards/<id>/       -> Update card (e.g. freeze/unfreeze)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method in ["PATCH", "PUT"]:
+            return CardUpdateSerializer
+        return CardSerializer
+
+    def get_queryset(self):
+        # Allow access only to cards owned by one of the user's accounts
+        return Card.objects.filter(account__user=self.request.user)
 
 
 class InternalTransferListCreateView(generics.ListCreateAPIView):

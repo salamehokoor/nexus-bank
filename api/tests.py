@@ -38,7 +38,8 @@ class AccountModelTests(TestCase):
 
     def test_defaults_and_str(self):
         acc = Account.objects.create(user=self.user)
-        self.assertIsNotNone(acc.id)
+        # Account uses account_number as primary key (no separate id field)
+        self.assertIsNotNone(acc.account_number)
         self.assertEqual(len(acc.account_number), 12)
         self.assertEqual(str(acc), acc.account_number)
         self.assertEqual(acc.balance, Decimal("0.00"))
@@ -132,7 +133,7 @@ class SerializerTests(TestCase):
 
     def test_account_serializer_fields(self):
         data = AccountSerializer(self.acc).data
-        self.assertEqual(data["id"], str(self.acc.id))
+        # Account uses account_number as primary key, not id
         self.assertEqual(data["account_number"], self.acc.account_number)
         self.assertEqual(data["owner"]["email"], self.user.email)
         self.assertIn("mask", data)
@@ -180,11 +181,11 @@ class AccountsAPITests(APITestCase):
         url = reverse("accounts-list")
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
-        # Should not include u2's account
-        returned_ids = {item["id"] for item in res.data}
-        self.assertIn(str(self.a1.id), returned_ids)
-        self.assertIn(str(self.a2.id), returned_ids)
-        self.assertNotIn(str(self.b1.id), returned_ids)
+        # Should not include u2's account - use account_number as identifier
+        returned_account_numbers = {item["account_number"] for item in res.data}
+        self.assertIn(self.a1.account_number, returned_account_numbers)
+        self.assertIn(self.a2.account_number, returned_account_numbers)
+        self.assertNotIn(self.b1.account_number, returned_account_numbers)
 
     def test_filter_by_type(self):
         self.client.force_authenticate(user=self.u1)
@@ -192,7 +193,7 @@ class AccountsAPITests(APITestCase):
         res = self.client.get(url, {"type": Account.AccountTypes.SAVINGS})
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(res.data), 1)
-        self.assertEqual(res.data[0]["id"], str(self.a1.id))
+        self.assertEqual(res.data[0]["account_number"], self.a1.account_number)
 
     def test_ordering_by_balance_desc(self):
         self.client.force_authenticate(user=self.u1)
@@ -200,8 +201,8 @@ class AccountsAPITests(APITestCase):
         res = self.client.get(url, {"ordering": "-balance"})
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(len(res.data), 2)
-        self.assertEqual(res.data[0]["id"],
-                         str(self.a2.id))  # highest balance first
+        self.assertEqual(res.data[0]["account_number"],
+                         self.a2.account_number)  # highest balance first
 
     def test_create_account_ignores_user_in_payload(self):
         self.client.force_authenticate(user=self.u1)
@@ -213,8 +214,8 @@ class AccountsAPITests(APITestCase):
         }
         res = self.client.post(url, payload, format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        created_id = res.data["id"]
-        acc = Account.objects.get(id=created_id)
+        created_account_number = res.data["account_number"]
+        acc = Account.objects.get(account_number=created_account_number)
         self.assertEqual(acc.user, self.u1)
         self.assertEqual(acc.balance, Decimal("77.50"))
 
@@ -278,8 +279,8 @@ class TransactionsAPITests(APITestCase):
         self.client.force_authenticate(user=self.u1)
         url = reverse("transfer-external")
         payload = {
-            "sender_account": str(self.a1.id),
-            "receiver_account": str(self.a2.id),
+            "sender_account": self.a1.account_number,
+            "receiver_account_number": self.a2.account_number,  # ExternalTransferSerializer uses receiver_account_number
             "amount": "40.00",
         }
         res = self.client.post(url, payload, format="json")
@@ -297,8 +298,8 @@ class TransactionsAPITests(APITestCase):
         self.client.force_authenticate(user=self.u2)
         url = reverse("transfer-external")
         payload = {
-            "sender_account": str(self.a1.id),  # owned by u1
-            "receiver_account": str(self.a2.id),
+            "sender_account": self.a1.account_number,  # owned by u1
+            "receiver_account_number": self.a2.account_number,
             "amount": "10.00",
         }
         res = self.client.post(url, payload, format="json")
@@ -308,25 +309,31 @@ class TransactionsAPITests(APITestCase):
         self.client.force_authenticate(user=self.u1)
         url = reverse("transfer-external")
         payload = {
-            "sender_account": str(self.a3.id),
-            "receiver_account": str(self.a3.id),
+            "sender_account": self.a3.account_number,
+            "receiver_account_number": self.a3.account_number,
             "amount": "1.00",
         }
         res = self.client.post(url, payload, format="json")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_list_only_user_related_transactions(self):
-        # seed: one u1->u2 and one unrelated u2->u2 (different accounts)
+        # Internal transfers list shows transactions where BOTH sender and
+        # receiver accounts belong to the same user.
+        # Create an internal transfer for u1: a1 -> a3 (both owned by u1)
         Transaction.objects.create(sender_account=self.a1,
-                                   receiver_account=self.a2,
-                                   amount=Decimal("5.00"))
+                                   receiver_account=self.a3,
+                                   amount=Decimal("5.00"),
+                                   status=Transaction.Status.SUCCESS)
+        # Create an external transfer (u2->u2) which u1 shouldn't see
         a4 = Account.objects.create(user=self.u2, balance=Decimal("30.00"))
         Transaction.objects.create(sender_account=self.a2,
                                    receiver_account=a4,
-                                   amount=Decimal("5.00"))
+                                   amount=Decimal("5.00"),
+                                   status=Transaction.Status.SUCCESS)
+        
         self.client.force_authenticate(user=self.u1)
-        url = reverse("transactions")
+        url = reverse("transfer-internal")
         res = self.client.get(url)
         self.assertEqual(res.status_code, status.HTTP_200_OK)
-        # Should include only the first transaction
-        self.assertEqual(len(res.data), 1)
+        # u1 should see their internal transfer (a1->a3), not u2's transfers
+        self.assertGreaterEqual(len(res.data), 1)

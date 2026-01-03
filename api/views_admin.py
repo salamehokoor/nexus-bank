@@ -19,6 +19,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from .models import User, Account
 from risk.models import Incident
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class AdminUserBlockView(APIView):
     POST /admin/users/<id>/block/
     Block a user by setting is_active=False.
     """
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
 
     @extend_schema(
@@ -89,6 +91,7 @@ class AdminUserUnblockView(APIView):
     POST /admin/users/<id>/unblock/
     Unblock a user by setting is_active=True.
     """
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
 
     @extend_schema(
@@ -128,6 +131,7 @@ class AdminAccountFreezeView(APIView):
     POST /admin/accounts/<account_number>/freeze/
     Freeze an account by setting is_active=False.
     """
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
 
     @extend_schema(
@@ -164,6 +168,7 @@ class AdminAccountUnfreezeView(APIView):
     POST /admin/accounts/<account_number>/unfreeze/
     Unfreeze an account by setting is_active=True.
     """
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
 
     @extend_schema(
@@ -206,6 +211,7 @@ class AdminTerminateSessionView(APIView):
     Requires 'rest_framework_simplejwt.token_blacklist' in INSTALLED_APPS.
     If not installed, returns a warning but still logs the action.
     """
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
 
     @extend_schema(

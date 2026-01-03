@@ -310,6 +310,11 @@ The system shall satisfy the following functional requirements:
 | FR-08 | Users shall pay bills to registered billers | Medium |
 | FR-09 | Administrators shall view business metrics dashboards | Medium |
 | FR-10 | System shall log all security-relevant events | High |
+| FR-11 | System shall enforce configurable withdrawal limits based on account type | High |
+| FR-12 | System shall apply processing fees to external transfers | Medium |
+| FR-13 | Users shall be able to freeze/unfreeze virtual cards | Medium |
+| FR-14 | System shall monitor transaction velocity and flag anomalies | High |
+| FR-15 | System shall store forensic incident details in structured JSON | High |
 
 #### 2.1.2 Non-Functional Requirements
 
@@ -575,8 +580,12 @@ class Account(BaseModel):
                 check=Q(balance__gte=0),
                 name='account_balance_nonnegative'
             ),
+            ),
         ]
 ```
+
+**Limit Enforcement:**
+Withdrawal limits are strictly enforced at the serializer level (`api/serializers.py`) during transfer validation. If a transaction amount exceeds the `maximum_withdrawal_amount` for the sender's account type, the request is rejected with a `400 Bad Request`.
 
 #### 3.2.3 Transaction Atomicity Implementation
 
@@ -597,7 +606,12 @@ def save(self, *args, **kwargs):
             raise ValueError("Cannot transfer to the same account.")
         if self.amount <= 0:
             raise ValueError("Amount must be positive.")
-        if sa.balance < (self.amount + self.fee_amount):
+        
+        # calculate fees (1% for external transfers)
+        fee_amount = self.fee_amount or Decimal("0.00")
+        total_debit = self.amount + fee_amount
+
+        if sa.balance < total_debit:
             raise ValueError("Insufficient funds.")
 
         # Currency conversion if needed
@@ -614,6 +628,20 @@ def save(self, *args, **kwargs):
         self.receiver_balance_after = ra.balance
 
         return super().save(*args, **kwargs)
+```
+
+#### 3.2.4 Virtual Card Management
+
+The system allows users to manage multiple virtual cards linked to their accounts. A dedicated endpoint (`PATCH /api/cards/<id>/`) enables users to freeze or unfreeze cards instantly in case of loss or suspected fraud.
+
+```python
+class CardDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET /cards/<id>/         -> Retrieve card details
+    PATCH /cards/<id>/       -> Update card (e.g. freeze/unfreeze)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = CardUpdateSerializer
 ```
 
 ### 3.3 Business Intelligence Module (`business/`)

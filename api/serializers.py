@@ -14,6 +14,7 @@ from .models import Account, BillPayment, Biller, Card, Notification, OTPVerific
 
 # Threshold for requiring OTP on transfers
 HIGH_VALUE_TRANSFER_THRESHOLD = Decimal("500.00")
+EXTERNAL_TRANSFER_FEE_PERCENTAGE = Decimal("0.01")  # 1% fee
 
 
 class UserCreateSerializer(BaseUserCreateSerializer):
@@ -58,6 +59,15 @@ class CardSerializer(serializers.ModelSerializer):
         if hasattr(value, "date"):
             value = value.date()
         return value.isoformat()
+
+
+class CardUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for updating card status (Freezing/Unfreezing).
+    """
+    class Meta:
+        model = Card
+        fields = ["is_active"]
 
 
 class AccountSerializer(serializers.ModelSerializer):
@@ -207,6 +217,15 @@ class InternalTransferSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Cannot transfer to the same account.")
         
+        # Enforce Withdrawal Limits
+        sender = attrs["sender_account"]
+        amount = attrs.get("amount", Decimal("0"))
+        
+        if amount > sender.maximum_withdrawal_amount:
+            raise serializers.ValidationError({
+                "amount": f"Amount exceeds the maximum limit of {sender.maximum_withdrawal_amount} for this account type."
+            })
+
         # OTP validation for high-value transfers
         amount = attrs.get("amount", Decimal("0"))
         if amount > HIGH_VALUE_TRANSFER_THRESHOLD:
@@ -286,6 +305,13 @@ class ExternalTransferSerializer(serializers.Serializer):
         if receiver.account_number == sender.account_number:
             raise serializers.ValidationError(
                 "Cannot transfer to the same account.")
+        
+        # Enforce Withdrawal Limits
+        amount = attrs.get("amount", Decimal("0"))
+        if amount > sender.maximum_withdrawal_amount:
+            raise serializers.ValidationError({
+                "amount": f"Amount exceeds the maximum limit of {sender.maximum_withdrawal_amount} for this account type."
+            })
 
         attrs["receiver_account"] = receiver
         
@@ -319,12 +345,16 @@ class ExternalTransferSerializer(serializers.Serializer):
         self.created = existing is None
         if existing:
             return existing
+        # Calculate Fee (1% for external transfers)
+        amount = validated["amount"]
+        fee_amount = (amount * EXTERNAL_TRANSFER_FEE_PERCENTAGE).quantize(Decimal("0.01"))
+
         tx = Transaction.objects.create(
             sender_account=validated["sender_account"],
             receiver_account=validated["receiver_account"],
-            amount=validated["amount"],
+            amount=amount,
             idempotency_key=idem,
-            fee_amount=Decimal("0.00"),
+            fee_amount=fee_amount,
             status=Transaction.Status.SUCCESS,
         )
         return tx

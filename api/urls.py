@@ -7,6 +7,7 @@ from .views import (
     AccountsListCreateView,
     BillPaymentDetailView,
     BillPaymentListCreateView,
+    CardDetailView,
     ExternalTransferListCreateView,
     GenerateTransactionOTPView,
     InternalTransferListCreateView,
@@ -35,6 +36,8 @@ urlpatterns = [
     path("auth/social/complete/",
          social_login_complete,
          name="social-login-complete"),
+    ###
+    path("cards/<int:pk>/", CardDetailView.as_view(), name="card-detail"),
     ###
     # 2FA Authentication
     path("auth/login/init/", LoginInitView.as_view(), name="login-init"),
