@@ -67,13 +67,3 @@ urlpatterns = [
     ###
     path('', include('api.urls')),
 ]
-
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
-
-urlpatterns += [
-    path("auth/jwt/create/", TokenObtainPairView.as_view(), name="jwt-create"),
-    path("auth/jwt/refresh/", TokenRefreshView.as_view(), name="jwt-refresh"),
-]

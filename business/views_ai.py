@@ -25,8 +25,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from drf_spectacular.utils import extend_schema, OpenApiExample
 
-from .ai import analyze_business, AI_MODEL_NAME
-from .models import DailyAIInsight, MonthlyAIInsight
+from .ai import analyze_business, explain_daily_performance, AI_MODEL_NAME
+from .models import DailyAIInsight, MonthlyAIInsight, DailyBusinessMetrics
 from .reporting import generate_daily_report, generate_monthly_report
 from .serializers_ai import (
     AIAdvisorRequestSerializer,
@@ -34,6 +34,69 @@ from .serializers_ai import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class DailyInsightTriggerView(APIView):
+    """
+    POST /business/ai/daily-insight/
+    
+    Trigger AI analysis comparing today's metrics with yesterday's.
+    The insight is saved to DailyBusinessMetrics.ai_insight and returned.
+    """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+
+    @extend_schema(
+        summary="Generate Daily AI Insight",
+        description="Compare today's metrics with yesterday and generate AI insight.",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "format": "date", "example": "2026-01-03"}
+                },
+                "required": ["date"]
+            }
+        },
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string"},
+                    "ai_insight": {"type": "string", "nullable": True},
+                }
+            }
+        },
+        tags=["Business Intelligence"],
+    )
+    def post(self, request):
+        date_str = request.data.get("date")
+        if not date_str:
+            return Response(
+                {"detail": "date field is required (YYYY-MM-DD)"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            from datetime import datetime
+            target_date = datetime.fromisoformat(date_str).date()
+        except ValueError:
+            return Response(
+                {"detail": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Trigger AI insight generation
+        insight = explain_daily_performance(target_date)
+
+        # Fetch the metrics to return the saved insight
+        metrics = DailyBusinessMetrics.objects.filter(date=target_date).first()
+
+        return Response({
+            "date": str(target_date),
+            "ai_insight": insight,
+            "saved": metrics.ai_insight is not None if metrics else False,
+        })
 
 
 class AIBusinessAdvisorView(APIView):

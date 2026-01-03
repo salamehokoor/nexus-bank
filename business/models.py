@@ -100,6 +100,30 @@ class DailyBusinessMetrics(TimeStampedModel):
     failed_logins = models.IntegerField(default=0)
     incidents = models.IntegerField(default=0)
 
+    # Granular breakdowns (Scope 1.5.4)
+    metrics_by_region = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Breakdown by region: {'Jordan': {'users': 50, 'tx_count': 100}, ...}"
+    )
+    metrics_by_type = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Breakdown by activity type: {'transfer': 100, 'bill_payment': 20}"
+    )
+    metrics_by_currency = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Breakdown by currency: {'JOD': {'amount': 5000}, 'USD': {'amount': 2000}}"
+    )
+
+    # AI-generated daily insight (Scope 1.5.6)
+    ai_insight = models.TextField(
+        null=True,
+        blank=True,
+        help_text="AI-generated insight comparing this day's performance to the previous day"
+    )
+
     class Meta:
         ordering = ["-date"]
         indexes = [

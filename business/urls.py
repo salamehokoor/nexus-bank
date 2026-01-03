@@ -4,7 +4,7 @@ URL routes for business metrics APIs.
 from django.urls import path
 
 from .views import (
-    DailyMetricsView,
+    DailyMetricsListView,
     WeeklySummaryView,
     MonthlySummaryView,
     CountryMetricsView,
@@ -12,10 +12,11 @@ from .views import (
     ActiveUsersView,
     BusinessOverviewView,
 )
-from .views_ai import AIBusinessAdvisorView
+from .views_ai import AIBusinessAdvisorView, DailyInsightTriggerView
 
 urlpatterns = [
-    path("daily/", DailyMetricsView.as_view(), name="business-daily"),
+    # Date range filtering (Scope 1.5.5): /business/daily/?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+    path("daily/", DailyMetricsListView.as_view(), name="business-daily"),
     path("weekly/", WeeklySummaryView.as_view(), name="business-weekly"),
     path("monthly/", MonthlySummaryView.as_view(), name="business-monthly"),
     path("countries/", CountryMetricsView.as_view(), name="business-country"),
@@ -28,5 +29,7 @@ urlpatterns = [
     # AI Business Advisor (admin-only, read-only decision support)
     path("ai/advisor/", AIBusinessAdvisorView.as_view(),
          name="ai-business-advisor"),
+    path("ai/daily-insight/", DailyInsightTriggerView.as_view(),
+         name="ai-daily-insight"),
 ]
 

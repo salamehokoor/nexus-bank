@@ -24,6 +24,10 @@ class AuthorizationLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
+        # Skip custom logic for Django Admin to prevent redirect loops
+        if request.path.startswith('/admin/') or request.path.startswith('/static/admin/'):
+            return self.get_response(request)
+
         response = self.get_response(request)
 
         status = response.status_code
@@ -91,6 +95,10 @@ class ApiKeyLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
+        # Skip custom logic for Django Admin to prevent redirect loops
+        if request.path.startswith('/admin/') or request.path.startswith('/static/admin/'):
+            return self.get_response(request)
+
         path = request.path or ""
         api_key = request.META.get("HTTP_X_API_KEY")
         allowed_keys = [
@@ -124,6 +132,10 @@ class ErrorLoggingMiddleware:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
+        # Skip custom logic for Django Admin to prevent redirect loops
+        if request.path.startswith('/admin/') or request.path.startswith('/static/admin/'):
+            return self.get_response(request)
+
         try:
             response = self.get_response(request)
         except Exception as exc:

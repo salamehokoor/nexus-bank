@@ -17,6 +17,13 @@ from .views import (
     social_login_complete,
 )
 from .views import BillerListView
+from .views_admin import (
+    AdminUserBlockView,
+    AdminUserUnblockView,
+    AdminAccountFreezeView,
+    AdminAccountUnfreezeView,
+    AdminTerminateSessionView,
+)
 
 urlpatterns = [
     path("accounts", AccountsListCreateView.as_view(), name="accounts-list"),
@@ -52,6 +59,15 @@ urlpatterns = [
     # Notifications REST API
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
     path("notifications/<int:pk>/read/", NotificationMarkReadView.as_view(), name="notification-read"),
+    
+    # ==========================================================================
+    # Admin Response Endpoints (Scope 1.5.7)
+    # ==========================================================================
+    path("admin/users/<int:pk>/block/", AdminUserBlockView.as_view(), name="admin-user-block"),
+    path("admin/users/<int:pk>/unblock/", AdminUserUnblockView.as_view(), name="admin-user-unblock"),
+    path("admin/accounts/<str:account_number>/freeze/", AdminAccountFreezeView.as_view(), name="admin-account-freeze"),
+    path("admin/accounts/<str:account_number>/unfreeze/", AdminAccountUnfreezeView.as_view(), name="admin-account-unfreeze"),
+    path("admin/users/<int:pk>/terminate-session/", AdminTerminateSessionView.as_view(), name="admin-terminate-session"),
 ]
 
 

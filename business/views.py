@@ -1,11 +1,14 @@
 """
 API views exposing business metrics (daily/weekly/monthly, country/currency, active users).
 All endpoints require authentication; responses are cache-hinted for dashboards.
+Scope 1.5.5: Filtering by date ranges and dimensions.
 """
 from datetime import datetime, timedelta
 
 from django.utils.cache import patch_cache_control
+from django_filters.rest_framework import DjangoFilterBackend, FilterSet, DateFilter
 from rest_framework import permissions, status
+from rest_framework.generics import ListAPIView
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -37,6 +40,39 @@ def _parse_date_param(value):
         return None
 
 
+# --------------------------------------------------------------------------
+# Filter Sets (Scope 1.5.5)
+# --------------------------------------------------------------------------
+class DailyMetricsFilter(FilterSet):
+    """Filter for date ranges on daily metrics."""
+    date_from = DateFilter(field_name="date", lookup_expr="gte")
+    date_to = DateFilter(field_name="date", lookup_expr="lte")
+
+    class Meta:
+        model = DailyBusinessMetrics
+        fields = ["date", "date_from", "date_to"]
+
+
+class CountryMetricsFilter(FilterSet):
+    """Filter for country metrics by date and country."""
+    date_from = DateFilter(field_name="date", lookup_expr="gte")
+    date_to = DateFilter(field_name="date", lookup_expr="lte")
+
+    class Meta:
+        model = CountryUserMetrics
+        fields = ["date", "country", "date_from", "date_to"]
+
+
+class CurrencyMetricsFilter(FilterSet):
+    """Filter for currency metrics by date and currency."""
+    date_from = DateFilter(field_name="date", lookup_expr="gte")
+    date_to = DateFilter(field_name="date", lookup_expr="lte")
+
+    class Meta:
+        model = CurrencyMetrics
+        fields = ["date", "currency", "date_from", "date_to"]
+
+
 class BasePaginatedView(APIView):
     permission_classes = [permissions.IsAdminUser]
     pagination_class = LimitOffsetPagination
@@ -54,7 +90,24 @@ class BasePaginatedView(APIView):
         return Response(data)
 
 
+# --------------------------------------------------------------------------
+# List Views with Filtering (Scope 1.5.5)
+# --------------------------------------------------------------------------
+class DailyMetricsListView(ListAPIView):
+    """
+    List daily metrics with date range filtering (Scope 1.5.5).
+    Filters: date, date_from, date_to
+    Example: /business/daily/?date_from=2025-10-01&date_to=2025-12-31
+    """
+    queryset = DailyBusinessMetrics.objects.all().order_by("-date")
+    serializer_class = DailyBusinessMetricsSerializer
+    permission_classes = [permissions.IsAdminUser]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = DailyMetricsFilter
+
+
 class DailyMetricsView(APIView):
+    """Single daily metrics view (legacy - returns latest or specific date)."""
     permission_classes = [permissions.IsAdminUser]
 
     def get(self, request):

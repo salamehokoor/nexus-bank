@@ -64,6 +64,7 @@ def _get_currency_row(target_date, currency: str):
 def record_transaction(transaction_obj: Transaction):
     """
     Incrementally update daily/country/currency metrics for a transaction.
+    Also updates JSON breakdowns for granular BI (Scope 1.5.4).
     """
     target_date = timezone.localdate(getattr(transaction_obj, "created_at",
                                              None) or timezone.now())
@@ -89,6 +90,12 @@ def record_transaction(transaction_obj: Transaction):
             metrics.avg_transaction_value = (
                 metrics.total_transferred_amount / metrics.total_transactions_success
             ).quantize(Decimal("0.01"))
+
+            # Update JSON breakdowns (Scope 1.5.4)
+            _update_region_breakdown(metrics, sender_country, transaction_obj)
+            _update_type_breakdown(metrics, "transfer")
+            _update_currency_breakdown(metrics, sender_currency, transaction_obj)
+
         elif transaction_obj.status == Transaction.Status.FAILED:
             metrics.total_transactions_failed += 1
         elif transaction_obj.status == Transaction.Status.REVERSED:
@@ -117,6 +124,53 @@ def record_transaction(transaction_obj: Transaction):
                 currency_row.save()
 
 
+def _update_region_breakdown(metrics: DailyBusinessMetrics, country: str, tx: Transaction):
+    """Update metrics_by_region JSON field."""
+    if not country:
+        country = "Unknown"
+    
+    region_data = metrics.metrics_by_region or {}
+    if country not in region_data:
+        region_data[country] = {"tx_count": 0, "tx_amount": 0, "fee_revenue": 0}
+    
+    region_data[country]["tx_count"] += 1
+    region_data[country]["tx_amount"] = float(
+        Decimal(str(region_data[country]["tx_amount"])) + tx.amount
+    )
+    region_data[country]["fee_revenue"] = float(
+        Decimal(str(region_data[country]["fee_revenue"])) + tx.fee_amount
+    )
+    metrics.metrics_by_region = region_data
+
+
+def _update_type_breakdown(metrics: DailyBusinessMetrics, activity_type: str):
+    """Update metrics_by_type JSON field."""
+    type_data = metrics.metrics_by_type or {}
+    if activity_type not in type_data:
+        type_data[activity_type] = 0
+    type_data[activity_type] += 1
+    metrics.metrics_by_type = type_data
+
+
+def _update_currency_breakdown(metrics: DailyBusinessMetrics, currency: str, tx: Transaction):
+    """Update metrics_by_currency JSON field."""
+    if not currency:
+        currency = "UNKNOWN"
+    
+    currency_data = metrics.metrics_by_currency or {}
+    if currency not in currency_data:
+        currency_data[currency] = {"tx_count": 0, "amount": 0, "fee_revenue": 0}
+    
+    currency_data[currency]["tx_count"] += 1
+    currency_data[currency]["amount"] = float(
+        Decimal(str(currency_data[currency]["amount"])) + tx.amount
+    )
+    currency_data[currency]["fee_revenue"] = float(
+        Decimal(str(currency_data[currency]["fee_revenue"])) + tx.fee_amount
+    )
+    metrics.metrics_by_currency = currency_data
+
+
 def record_bill_payment(bill_payment: BillPayment):
     """Incrementally update bill payment metrics when a bill is paid/failed."""
     if bill_payment.status not in {"PAID", "FAILED"}:
@@ -128,6 +182,8 @@ def record_bill_payment(bill_payment: BillPayment):
         if bill_payment.status == "PAID":
             metrics.bill_payments_count += 1
             metrics.bill_payments_amount += bill_payment.amount
+            # Update type breakdown (Scope 1.5.4)
+            _update_type_breakdown(metrics, "bill_payment")
         elif bill_payment.status == "FAILED":
             metrics.bill_payments_failed += 1
         _refresh_profit(metrics)
