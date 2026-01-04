@@ -11,11 +11,17 @@ class LoggedAnonRateThrottle(AnonRateThrottle):
     Anonymous throttle that logs blocked requests.
     """
 
-    def throttle_failure(self, request, view):
-        log_rate_limit_triggered(request=request,
+    def allow_request(self, request, view):
+        # Store request for use in throttle_failure
+        self._request = request
+        self._view = view
+        return super().allow_request(request, view)
+
+    def throttle_failure(self):
+        log_rate_limit_triggered(request=getattr(self, '_request', None),
                                  scope=self.scope,
                                  blocked=True)
-        return super().throttle_failure(request, view)
+        return super().throttle_failure()
 
 
 class LoggedUserRateThrottle(UserRateThrottle):
@@ -23,11 +29,17 @@ class LoggedUserRateThrottle(UserRateThrottle):
     Authenticated-user throttle that logs blocked requests.
     """
 
-    def throttle_failure(self, request, view):
-        log_rate_limit_triggered(request=request,
+    def allow_request(self, request, view):
+        # Store request for use in throttle_failure
+        self._request = request
+        self._view = view
+        return super().allow_request(request, view)
+
+    def throttle_failure(self):
+        log_rate_limit_triggered(request=getattr(self, '_request', None),
                                  scope=self.scope,
                                  blocked=True)
-        return super().throttle_failure(request, view)
+        return super().throttle_failure()
 
 
 class LoggedScopedRateThrottle(ScopedRateThrottle):
@@ -35,8 +47,14 @@ class LoggedScopedRateThrottle(ScopedRateThrottle):
     Scoped throttle that logs blocked requests.
     """
 
-    def throttle_failure(self, request, view):
-        log_rate_limit_triggered(request=request,
+    def allow_request(self, request, view):
+        # Store request for use in throttle_failure
+        self._request = request
+        self._view = view
+        return super().allow_request(request, view)
+
+    def throttle_failure(self):
+        log_rate_limit_triggered(request=getattr(self, '_request', None),
                                  scope=self.scope,
                                  blocked=True)
-        return super().throttle_failure(request, view)
+        return super().throttle_failure()

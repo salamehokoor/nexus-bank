@@ -20,6 +20,9 @@ from api.views import LogoutView
 from risk.views import LoggingTokenRefreshView
 
 urlpatterns = [
+    ###
+    path('', include('api.urls')),
+
     # Admin
     # path('grappelli/', include('grappelli.urls')),
     path('admin/', admin.site.urls),
@@ -65,5 +68,5 @@ urlpatterns = [
     path("business/", include("business.urls")),
 
     ###
-    path('', include('api.urls')),
+    # path('', include('api.urls')),
 ]

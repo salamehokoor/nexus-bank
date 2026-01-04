@@ -20,12 +20,15 @@ from .serializers import (
     IncidentSerializer,
     LoginEventSerializer,
     UnlockIPSerializer,
+    RiskAnalysisRequestSerializer,
 )
 from .auth_logging import (
     log_auth_event,
     log_jwt_refresh_event,
     log_csrf_failure,
 )
+from .ai import analyze_incident
+from .models import Incident, LoginEvent
 
 
 # -------------------------------------------------------------------
@@ -137,26 +140,62 @@ class RiskKPIsView(APIView):
 
     def get(self, request):
         return Response({
-            "total_incidents":
-            Incident.objects.count(),
-            "critical_alerts":
-            Incident.objects.filter(severity="critical").count(),
-            "failed_logins":
-            Incident.objects.filter(event__icontains="Failed").count(),
-            "unique_attack_ips":
-            Incident.objects.values("ip").distinct().count(),
+            "total_incidents": Incident.objects.count(),
+            "critical_alerts": Incident.objects.filter(severity="critical").count(),
+            "failed_logins": Incident.objects.filter(event__icontains="Failed").count(),
+            "unique_attack_ips": Incident.objects.values("ip").distinct().count(),
+        })
+
+
+class RiskAnalysisView(APIView):
+    """
+    POST /risk/analyze/
+    
+    Ad-hoc analysis of risk events using Gemini.
+    Accepts an Incident-like payload and returns the AI analysis text.
+    Does NOT persist the result to the DB (read-only analysis).
+    """
+    # APIView defaults are sufficient (JWT usually default in settings)
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        serializer = RiskAnalysisRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # Construct a temporary object to satisfy analyze_incident interface
+        # analyze_incident expects an object with attributes: event, severity, ip, country, attempted_email/user, details
+        class MockIncident:
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+                self.id = "adhoc"
+                self.attempted_email = kwargs.get("distinguished_name")
+                self.user = kwargs.get("distinguished_name")
+
+        mock_incident = MockIncident(**data)
+        
+        analysis = analyze_incident(mock_incident)
+        
+        return Response({
+            "gemini_analysis": analysis or "Analysis unavailable."
         })
 
 
 def csrf_failure_view(request, reason=""):
     """
     Custom CSRF failure handler that logs and returns 403.
+    
+    NOTE: This is called by Django's CSRF middleware, NOT by DRF.
+    We must use Django's JsonResponse, not DRF Response.
     """
+    from django.http import JsonResponse
+    
     log_csrf_failure(request=request, reason=reason)
-    return Response(
+    return JsonResponse(
         {
             "detail": "CSRF verification failed.",
             "reason": reason
         },
-        status=status.HTTP_403_FORBIDDEN,
+        status=403,
     )

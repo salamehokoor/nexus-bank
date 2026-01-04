@@ -25,3 +25,16 @@ class LoginEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoginEvent
         fields = "__all__"
+
+
+class RiskAnalysisRequestSerializer(serializers.Serializer):
+    """
+    Serializer for triggering AI analysis on a risk event.
+    Accepts the standard fields found in Incident/LoginEvent.
+    """
+    event = serializers.CharField(required=True)
+    severity = serializers.CharField(required=False, default="medium")
+    ip = serializers.IPAddressField(required=False, allow_blank=True, allow_null=True)
+    country = serializers.CharField(required=False, allow_blank=True)
+    distinguished_name = serializers.CharField(required=False, allow_blank=True, help_text="User email or identifier")
+    details = serializers.JSONField(required=False, default=dict)

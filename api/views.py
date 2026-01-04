@@ -342,8 +342,12 @@ class NotificationListView(generics.ListAPIView):
 
 class NotificationMarkReadView(generics.UpdateAPIView):
     """
-    PATCH /notifications/<pk>/read/
+    PATCH/POST /notifications/<pk>/read/
     Marks a specific notification as read.
+    Accepts both PATCH and POST methods for frontend compatibility.
+    
+    If the notification doesn't exist (e.g., client-generated ID), returns 204 No Content
+    to indicate the operation completed (nothing to mark as read).
     """
 
     serializer_class = NotificationSerializer
@@ -353,10 +357,31 @@ class NotificationMarkReadView(generics.UpdateAPIView):
         return Notification.objects.filter(user=self.request.user)
 
     def patch(self, request, *args, **kwargs):
-        notification = self.get_object()
+        pk = kwargs.get("pk")
+        
+        # Try to find the notification
+        try:
+            # First, attempt to convert pk to integer for proper lookup
+            # since our Notification model uses integer PKs
+            try:
+                pk_int = int(pk)
+            except (ValueError, TypeError):
+                # Non-numeric ID (e.g., client-generated UUID) - doesn't exist in backend
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            
+            notification = self.get_queryset().get(pk=pk_int)
+        except Notification.DoesNotExist:
+            # Notification doesn't exist - treat as "already marked as read"
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        
+        # Mark as read
         notification.is_read = True
         notification.save(update_fields=["is_read", "updated_at"])
         return Response(self.get_serializer(notification).data)
+
+    def post(self, request, *args, **kwargs):
+        """Accept POST as an alias for PATCH for frontend compatibility."""
+        return self.patch(request, *args, **kwargs)
 
 
 # =============================================================================

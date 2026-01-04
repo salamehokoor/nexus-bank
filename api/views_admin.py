@@ -7,15 +7,18 @@ Provides admin-only endpoints to:
 - Terminate user sessions (blacklist tokens)
 
 All actions are logged to the Incident model for audit compliance.
+JWT authentication is used exclusively - no CSRF tokens required.
 """
 import logging
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema
 
 from .models import User, Account
 from risk.models import Incident
@@ -49,6 +52,7 @@ def _log_admin_action(admin_user, action: str, target_type: str, target_id, deta
 # --------------------------------------------------------------------------
 # User Block/Unblock Endpoints
 # --------------------------------------------------------------------------
+@method_decorator(csrf_exempt, name='dispatch')
 class AdminUserBlockView(APIView):
     """
     POST /admin/users/<id>/block/
@@ -86,6 +90,7 @@ class AdminUserBlockView(APIView):
         return Response({"detail": f"User {user.email} has been blocked."})
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class AdminUserUnblockView(APIView):
     """
     POST /admin/users/<id>/unblock/
@@ -126,6 +131,7 @@ class AdminUserUnblockView(APIView):
 # --------------------------------------------------------------------------
 # Account Freeze/Unfreeze Endpoints
 # --------------------------------------------------------------------------
+@method_decorator(csrf_exempt, name='dispatch')
 class AdminAccountFreezeView(APIView):
     """
     POST /admin/accounts/<account_number>/freeze/
@@ -139,30 +145,50 @@ class AdminAccountFreezeView(APIView):
         responses={200: {"type": "object", "properties": {"detail": {"type": "string"}}}},
     )
     def post(self, request, account_number):
-        account = get_object_or_404(Account, account_number=account_number)
-        
-        if not account.is_active:
-            return Response(
-                {"detail": f"Account {account_number} is already frozen."},
-                status=status.HTTP_400_BAD_REQUEST
+        try:
+            logger.info(f"Admin {request.user.email} attempting to freeze account {account_number}")
+            
+            # Look up account - get_object_or_404 raises Http404 if not found
+            try:
+                account = Account.objects.get(account_number=account_number)
+            except Account.DoesNotExist:
+                logger.warning(f"Account freeze failed: Account {account_number} not found")
+                return Response(
+                    {"detail": f"Account {account_number} not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if not account.is_active:
+                return Response(
+                    {"detail": f"Account {account_number} is already frozen."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Freeze account
+            account.is_active = False
+            account.save(update_fields=["is_active"])
+            
+            # Audit log
+            _log_admin_action(
+                admin_user=request.user,
+                action="FREEZE_ACCOUNT",
+                target_type="Account",
+                target_id=account_number,
+                details={"owner_email": account.user.email}
             )
-        
-        # Freeze account
-        account.is_active = False
-        account.save(update_fields=["is_active"])
-        
-        # Audit log
-        _log_admin_action(
-            admin_user=request.user,
-            action="FREEZE_ACCOUNT",
-            target_type="Account",
-            target_id=account_number,
-            details={"owner_email": account.user.email}
-        )
-        
-        return Response({"detail": f"Account {account_number} has been frozen."})
+            
+            logger.info(f"Admin {request.user.email} successfully froze account {account_number}")
+            return Response({"detail": f"Account {account_number} has been frozen."})
+            
+        except Exception as e:
+            logger.exception(f"Error freezing account {account_number}: {str(e)}")
+            return Response(
+                {"detail": "An error occurred while freezing the account. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class AdminAccountUnfreezeView(APIView):
     """
     POST /admin/accounts/<account_number>/unfreeze/
@@ -176,33 +202,52 @@ class AdminAccountUnfreezeView(APIView):
         responses={200: {"type": "object", "properties": {"detail": {"type": "string"}}}},
     )
     def post(self, request, account_number):
-        account = get_object_or_404(Account, account_number=account_number)
-        
-        if account.is_active:
-            return Response(
-                {"detail": f"Account {account_number} is already active."},
-                status=status.HTTP_400_BAD_REQUEST
+        try:
+            logger.info(f"Admin {request.user.email} attempting to unfreeze account {account_number}")
+            
+            try:
+                account = Account.objects.get(account_number=account_number)
+            except Account.DoesNotExist:
+                logger.warning(f"Account unfreeze failed: Account {account_number} not found")
+                return Response(
+                    {"detail": f"Account {account_number} not found."},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if account.is_active:
+                return Response(
+                    {"detail": f"Account {account_number} is already active."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Unfreeze account
+            account.is_active = True
+            account.save(update_fields=["is_active"])
+            
+            # Audit log
+            _log_admin_action(
+                admin_user=request.user,
+                action="UNFREEZE_ACCOUNT",
+                target_type="Account",
+                target_id=account_number,
+                details={"owner_email": account.user.email}
             )
-        
-        # Unfreeze account
-        account.is_active = True
-        account.save(update_fields=["is_active"])
-        
-        # Audit log
-        _log_admin_action(
-            admin_user=request.user,
-            action="UNFREEZE_ACCOUNT",
-            target_type="Account",
-            target_id=account_number,
-            details={"owner_email": account.user.email}
-        )
-        
-        return Response({"detail": f"Account {account_number} has been unfrozen."})
+            
+            logger.info(f"Admin {request.user.email} successfully unfroze account {account_number}")
+            return Response({"detail": f"Account {account_number} has been unfrozen."})
+            
+        except Exception as e:
+            logger.exception(f"Error unfreezing account {account_number}: {str(e)}")
+            return Response(
+                {"detail": "An error occurred while unfreezing the account. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 # --------------------------------------------------------------------------
 # Session Termination (Token Blacklist)
 # --------------------------------------------------------------------------
+@method_decorator(csrf_exempt, name='dispatch')
 class AdminTerminateSessionView(APIView):
     """
     POST /admin/users/<id>/terminate-session/

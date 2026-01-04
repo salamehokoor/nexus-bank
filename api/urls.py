@@ -18,6 +18,7 @@ from .views import (
     social_login_complete,
 )
 from .views import BillerListView
+from django.views.decorators.csrf import csrf_exempt
 from .views_admin import (
     AdminUserBlockView,
     AdminUserUnblockView,
@@ -61,16 +62,19 @@ urlpatterns = [
     ###
     # Notifications REST API
     path("notifications/", NotificationListView.as_view(), name="notification-list"),
-    path("notifications/<int:pk>/read/", NotificationMarkReadView.as_view(), name="notification-read"),
+    path("notifications/<str:pk>/read/", NotificationMarkReadView.as_view(), name="notification-read"),
     
     # ==========================================================================
     # Admin Response Endpoints (Scope 1.5.7)
     # ==========================================================================
-    path("admin/users/<int:pk>/block/", AdminUserBlockView.as_view(), name="admin-user-block"),
-    path("admin/users/<int:pk>/unblock/", AdminUserUnblockView.as_view(), name="admin-user-unblock"),
-    path("admin/accounts/<str:account_number>/freeze/", AdminAccountFreezeView.as_view(), name="admin-account-freeze"),
-    path("admin/accounts/<str:account_number>/unfreeze/", AdminAccountUnfreezeView.as_view(), name="admin-account-unfreeze"),
-    path("admin/users/<int:pk>/terminate-session/", AdminTerminateSessionView.as_view(), name="admin-terminate-session"),
+    # ==========================================================================
+    # Admin Response Endpoints (Scope 1.5.7)
+    # ==========================================================================
+    path("admin/users/<int:pk>/block/", csrf_exempt(AdminUserBlockView.as_view()), name="admin-user-block"),
+    path("admin/users/<int:pk>/unblock/", csrf_exempt(AdminUserUnblockView.as_view()), name="admin-user-unblock"),
+    path("admin/accounts/<str:account_number>/freeze/", csrf_exempt(AdminAccountFreezeView.as_view()), name="admin-account-freeze"),
+    path("admin/accounts/<str:account_number>/unfreeze/", csrf_exempt(AdminAccountUnfreezeView.as_view()), name="admin-account-unfreeze"),
+    path("admin/users/<int:pk>/terminate-session/", csrf_exempt(AdminTerminateSessionView.as_view()), name="admin-terminate-session"),
 ]
 
 
