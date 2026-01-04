@@ -31,7 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("id", "first_name", "email", "country", "is_staff",
-                  "is_superuser")
+                  "is_superuser", "is_active", "date_joined", "last_login")
 
 
 class CardSerializer(serializers.ModelSerializer):

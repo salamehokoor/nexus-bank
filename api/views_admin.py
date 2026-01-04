@@ -129,6 +129,31 @@ class AdminUserUnblockView(APIView):
 
 
 # --------------------------------------------------------------------------
+# Admin List Endpoints (All Data)
+# --------------------------------------------------------------------------
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminAccountsListView(APIView):
+    """
+    GET /admin/accounts/
+    List ALL accounts in the system (admin only).
+    """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+
+    @extend_schema(
+        summary="List All Accounts (Admin)",
+        description="Returns all bank accounts in the system for admin dashboard.",
+        responses={200: {"description": "List of all accounts"}},
+        tags=["Admin"],
+    )
+    def get(self, request):
+        from .serializers import AccountSerializer
+        accounts = Account.objects.select_related("user").order_by("-created_at")
+        serializer = AccountSerializer(accounts, many=True)
+        return Response(serializer.data)
+
+
+# --------------------------------------------------------------------------
 # Account Freeze/Unfreeze Endpoints
 # --------------------------------------------------------------------------
 @method_decorator(csrf_exempt, name='dispatch')
