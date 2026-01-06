@@ -9,7 +9,9 @@ from .views import (
     BillPaymentListCreateView,
     CardDetailView,
     ExternalTransferListCreateView,
-    GenerateTransactionOTPView,
+    CardDetailView,
+    ExternalTransferListCreateView,
+    TransferConfirmationView,
     InternalTransferListCreateView,
     LoginInitView,
     LoginVerifyView,
@@ -44,7 +46,7 @@ urlpatterns = [
     # 2FA Authentication
     path("auth/login/init/", LoginInitView.as_view(), name="login-init"),
     path("auth/login/verify/", LoginVerifyView.as_view(), name="login-verify"),
-    path("auth/otp/generate/", GenerateTransactionOTPView.as_view(), name="otp-generate"),
+    path("transfers/confirm/", TransferConfirmationView.as_view(), name="transfer-confirm"),
     ###
     path("transfers/internal/",
          InternalTransferListCreateView.as_view(),

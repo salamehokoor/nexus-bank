@@ -188,7 +188,6 @@ class InternalTransferSerializer(serializers.Serializer):
     """
     Transfer between two accounts owned by the authenticated user.
     Sender/receiver querysets are restricted per-request for safety.
-    OTP required for amounts > 500.
     """
 
     sender_account = serializers.PrimaryKeyRelatedField(
@@ -200,8 +199,6 @@ class InternalTransferSerializer(serializers.Serializer):
                                       min_value=Decimal("0.01"))
     idempotency_key = serializers.CharField(
         max_length=64, required=False, allow_blank=True, allow_null=True)
-    otp_code = serializers.CharField(
-        max_length=6, required=False, write_only=True, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -226,27 +223,6 @@ class InternalTransferSerializer(serializers.Serializer):
                 "amount": f"Amount exceeds the maximum limit of {sender.maximum_withdrawal_amount} for this account type."
             })
 
-        # OTP validation for high-value transfers
-        amount = attrs.get("amount", Decimal("0"))
-        if amount > HIGH_VALUE_TRANSFER_THRESHOLD:
-            otp_code = attrs.get("otp_code", "").strip()
-            if not otp_code:
-                raise serializers.ValidationError({
-                    "otp_code": f"OTP required for amounts > {HIGH_VALUE_TRANSFER_THRESHOLD}"
-                })
-            
-            # Verify OTP
-            req = self.context.get("request")
-            if not req or not req.user:
-                raise serializers.ValidationError("Authentication required.")
-            
-            if not OTPVerification.verify_code(
-                req.user, otp_code, OTPVerification.Purpose.TRANSACTION
-            ):
-                raise serializers.ValidationError({
-                    "otp_code": "Invalid or expired OTP code."
-                })
-        
         return attrs
 
     def create(self, validated):
@@ -256,13 +232,17 @@ class InternalTransferSerializer(serializers.Serializer):
         self.created = existing is None
         if existing:
             return existing
+
+        # Status will be determined by the View based on amount
+        status_val = validated.get("status", Transaction.Status.SUCCESS)
+        
         tx = Transaction.objects.create(
             sender_account=validated["sender_account"],
             receiver_account=validated["receiver_account"],
             amount=validated["amount"],
             idempotency_key=idem,
             fee_amount=Decimal("0.00"),
-            status=Transaction.Status.SUCCESS,
+            status=status_val,
         )
         return tx
 
@@ -271,7 +251,6 @@ class ExternalTransferSerializer(serializers.Serializer):
     """
     Transfer from one of the user's accounts to another user's account_number.
     Sender queryset is restricted per-request; receiver is looked up by number.
-    OTP required for amounts > 500.
     """
 
     sender_account = serializers.PrimaryKeyRelatedField(
@@ -282,8 +261,6 @@ class ExternalTransferSerializer(serializers.Serializer):
                                       min_value=Decimal("0.01"))
     idempotency_key = serializers.CharField(
         max_length=64, required=False, allow_blank=True, allow_null=True)
-    otp_code = serializers.CharField(
-        max_length=6, required=False, write_only=True, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -315,27 +292,6 @@ class ExternalTransferSerializer(serializers.Serializer):
 
         attrs["receiver_account"] = receiver
         
-        # OTP validation for high-value transfers
-        amount = attrs.get("amount", Decimal("0"))
-        if amount > HIGH_VALUE_TRANSFER_THRESHOLD:
-            otp_code = attrs.get("otp_code", "").strip()
-            if not otp_code:
-                raise serializers.ValidationError({
-                    "otp_code": f"OTP required for amounts > {HIGH_VALUE_TRANSFER_THRESHOLD}"
-                })
-            
-            # Verify OTP
-            req = self.context.get("request")
-            if not req or not req.user:
-                raise serializers.ValidationError("Authentication required.")
-            
-            if not OTPVerification.verify_code(
-                req.user, otp_code, OTPVerification.Purpose.TRANSACTION
-            ):
-                raise serializers.ValidationError({
-                    "otp_code": "Invalid or expired OTP code."
-                })
-        
         return attrs
 
     def create(self, validated):
@@ -345,9 +301,13 @@ class ExternalTransferSerializer(serializers.Serializer):
         self.created = existing is None
         if existing:
             return existing
+        
         # Calculate Fee (1% for external transfers)
         amount = validated["amount"]
         fee_amount = (amount * EXTERNAL_TRANSFER_FEE_PERCENTAGE).quantize(Decimal("0.01"))
+
+        # Status determined by View
+        status_val = validated.get("status", Transaction.Status.SUCCESS)
 
         tx = Transaction.objects.create(
             sender_account=validated["sender_account"],
@@ -355,7 +315,7 @@ class ExternalTransferSerializer(serializers.Serializer):
             amount=amount,
             idempotency_key=idem,
             fee_amount=fee_amount,
-            status=Transaction.Status.SUCCESS,
+            status=status_val,
         )
         return tx
 

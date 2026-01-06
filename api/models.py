@@ -227,6 +227,7 @@ class Transaction(BaseModel):
         SUCCESS = "SUCCESS", "Success"
         FAILED = "FAILED", "Failed"
         REVERSED = "REVERSED", "Reversed"
+        PENDING_OTP = "PENDING_OTP", "Pending OTP"
 
     sender_account = models.ForeignKey(Account,
                                        related_name='sent_transactions',
@@ -253,14 +254,14 @@ class Transaction(BaseModel):
 
     sender_balance_after = models.DecimalField(max_digits=12,
                                                decimal_places=2,
-                                               editable=False)
+                                               editable=False,
+                                               null=True)
 
     receiver_balance_after = models.DecimalField(max_digits=12,
                                                  decimal_places=2,
-                                                 editable=False)
+                                                 editable=False,
+                                                 null=True)
 
-    # This just makes sure when you look at a list of transactions,
-    # the newest ones are at the top.
     class Meta:
         ordering = ['-created_at']
         constraints = [
@@ -268,23 +269,15 @@ class Transaction(BaseModel):
                                    name='positive_transaction_amount')
         ]
 
-    def save(self, *args, **kwargs):
-        if self.pk:
-            return super().save(*args, **kwargs)
-
-        # Only successful transactions move money; FAILED/REVERSED are stored-only.
-        if self.status != self.Status.SUCCESS:
-            if self.sender_balance_after is None:
-                self.sender_balance_after = Decimal("0.00")
-            if self.receiver_balance_after is None:
-                self.receiver_balance_after = Decimal("0.00")
-            return super().save(*args, **kwargs)
-
+    def execute_transaction(self):
+        """
+        Executes the balance movement atomically.
+        Should only be called when status is confirmed as SUCCESS.
+        """
         with transaction.atomic():
-            sa = Account.objects.select_for_update().get(
-                pk=self.sender_account_id)
-            ra = Account.objects.select_for_update().get(
-                pk=self.receiver_account_id)
+            # Reload to lock
+            sa = Account.objects.select_for_update().get(pk=self.sender_account_id)
+            ra = Account.objects.select_for_update().get(pk=self.receiver_account_id)
 
             if sa.pk == ra.pk:
                 raise ValueError("Cannot transfer to the same account.")
@@ -317,10 +310,8 @@ class Transaction(BaseModel):
                     raise ValueError(f"Unsupported currency pair: {pair}")
 
             # --- Update balances atomically ---
-            Account.objects.filter(pk=sa.pk).update(balance=F("balance") -
-                                                    total_debit)
-            Account.objects.filter(pk=ra.pk).update(balance=F("balance") +
-                                                    credited)
+            Account.objects.filter(pk=sa.pk).update(balance=F("balance") - total_debit)
+            Account.objects.filter(pk=ra.pk).update(balance=F("balance") + credited)
 
             # --- Refresh updated balances ---
             sa.refresh_from_db(fields=["balance"])
@@ -328,8 +319,43 @@ class Transaction(BaseModel):
 
             self.sender_balance_after = sa.balance
             self.receiver_balance_after = ra.balance
+            
+            # Save the transaction record with updated balances
+            # Use super().save to avoid infinite recursion if we called self.save()
+            super().save(update_fields=['sender_balance_after', 'receiver_balance_after', 'status'])
 
-            return super().save(*args, **kwargs)
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        
+        # If we are creating a new transaction and it IS SUCCESS, execute immediately.
+        # If it is PENDING_OTP, just save the record without moving money.
+        if is_new:
+            if self.status == self.Status.SUCCESS:
+                # We save first to get an ID (sometimes advantageous), but here
+                # execute_transaction expects to find the accounts.
+                # Actually execute_transaction updates THIS instance's balance fields.
+                # Let's save first partially to ensure we have an ID if needed, 
+                # but standard practice: do the logic, then save.
+                
+                # However, our execute_transaction calls select_for_update on accounts,
+                # then updates accounts, then updates self.
+                # We can call it here.
+                if self.sender_balance_after is None:
+                    self.sender_balance_after = Decimal("0.00")
+                if self.receiver_balance_after is None:
+                    self.receiver_balance_after = Decimal("0.00")
+                
+                # We must save once to exist? Not strictly necessary for the logic but safer.
+                super().save(*args, **kwargs)
+                self.execute_transaction()
+                return
+
+        # Fallback for non-SUCCESS or existing updates
+        if self.sender_balance_after is None:
+             self.sender_balance_after = Decimal("0.00")
+        if self.receiver_balance_after is None:
+             self.receiver_balance_after = Decimal("0.00")
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.amount} from {self.sender_account} to {self.receiver_account}"
@@ -464,12 +490,13 @@ class Notification(BaseModel):
 
 class OTPVerification(models.Model):
     """
-    One-Time Password verification for 2FA.
-    Used for login verification and high-value transaction authorization.
+    One-Time Password verification for Login-2FA only.
+    For high-value transfers, use TransferOTP model.
     """
 
     class Purpose(models.TextChoices):
         LOGIN = "LOGIN", "Login Verification"
+        # Transaction purpose moved to TransferOTP, kept for legacy/login compat
         TRANSACTION = "TRANSACTION", "Transaction Authorization"
 
     user = models.ForeignKey(
@@ -496,27 +523,9 @@ class OTPVerification(models.Model):
     def __str__(self):
         return f"OTP {self.code} for {self.user.email} ({self.purpose})"
 
-    def is_valid(self) -> bool:
-        """Check if the OTP is still valid (not expired and not verified)."""
-        return (
-            not self.is_verified and
-            timezone.now() < self.expires_at
-        )
-
     @classmethod
     def generate(cls, user, purpose: str, validity_minutes: int = 5):
-        """
-        Generate a new OTP code for the user.
-        Invalidates all existing unused codes for the same purpose.
-        
-        Args:
-            user: The user to generate OTP for
-            purpose: LOGIN or TRANSACTION
-            validity_minutes: How long the code is valid (default 5 minutes)
-            
-        Returns:
-            OTPVerification instance with the new code
-        """
+        # ... logic mainly for Login ...
         # Invalidate existing unused codes for this user/purpose
         cls.objects.filter(
             user=user,
@@ -524,32 +533,18 @@ class OTPVerification(models.Model):
             is_verified=False,
         ).update(is_verified=True)  # Mark as verified to prevent reuse
 
-        # Generate 6-digit random code
         code = "".join([str(random.randint(0, 9)) for _ in range(6)])
         
-        # Create new OTP record
         otp = cls.objects.create(
             user=user,
             code=code,
             purpose=purpose,
             expires_at=timezone.now() + timedelta(minutes=validity_minutes),
         )
-        
         return otp
-
+    
     @classmethod
     def verify_code(cls, user, code: str, purpose: str) -> bool:
-        """
-        Verify an OTP code for a user.
-        
-        Args:
-            user: The user to verify OTP for
-            code: The 6-digit code to verify
-            purpose: LOGIN or TRANSACTION
-            
-        Returns:
-            True if code is valid, False otherwise
-        """
         try:
             otp = cls.objects.get(
                 user=user,
@@ -557,12 +552,74 @@ class OTPVerification(models.Model):
                 purpose=purpose,
                 is_verified=False,
             )
-            if otp.is_valid():
+            # Basic validation
+            if timezone.now() < otp.expires_at:
                 otp.is_verified = True
                 otp.save(update_fields=["is_verified"])
                 return True
             return False
         except cls.DoesNotExist:
+            return False
+
+
+import hashlib
+import secrets
+
+class TransferOTP(models.Model):
+    """
+    Dedicated OTP for authorized transfer confirmation.
+    Stores hashed OTP for security.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="transfer_otps")
+    transfer = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name="otp_request")
+    
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    attempts = models.IntegerField(default=0)
+    is_used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    MAX_ATTEMPTS = 3
+    VALIDITY_MINUTES = 5
+
+    def __str__(self):
+        return f"TransferOTP for {self.transfer.id}"
+
+    @staticmethod
+    def hash_code(code: str) -> str:
+        return hashlib.sha256(code.encode()).hexdigest()
+
+    @classmethod
+    def generate(cls, user, transfer):
+        # Generate 6 digit crypto-safe string
+        code = "".join([str(secrets.randbelow(10)) for _ in range(6)])
+        code_hash = cls.hash_code(code)
+        
+        expires = timezone.now() + timedelta(minutes=cls.VALIDITY_MINUTES)
+        
+        instance = cls.objects.create(
+            user=user,
+            transfer=transfer,
+            code_hash=code_hash,
+            expires_at=expires,
+        )
+        return instance, code
+
+    def verify(self, raw_code: str) -> bool:
+        if self.is_used:
+            return False
+        if timezone.now() > self.expires_at:
+            return False
+        if self.attempts >= self.MAX_ATTEMPTS:
+            return False
+            
+        hashed = self.hash_code(raw_code)
+        if hashed == self.code_hash:
+            return True
+        else:
+            self.attempts += 1
+            self.save(update_fields=['attempts'])
             return False
 
 

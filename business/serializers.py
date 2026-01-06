@@ -50,6 +50,7 @@ class WeeklySummarySerializer(serializers.Serializer):
                                                        decimal_places=2)
     fx_spread_revenue = serializers.DecimalField(max_digits=18,
                                                  decimal_places=2)
+    fx_volume = serializers.DecimalField(max_digits=18, decimal_places=2, required=False, default=0)
     net_revenue = serializers.DecimalField(max_digits=18, decimal_places=2)
     profit = serializers.DecimalField(max_digits=18, decimal_places=2)
 
@@ -73,6 +74,7 @@ class MonthlySummarySerializer(serializers.Serializer):
                                                        decimal_places=2)
     fx_spread_revenue = serializers.DecimalField(max_digits=18,
                                                  decimal_places=2)
+    fx_volume = serializers.DecimalField(max_digits=18, decimal_places=2, required=False, default=0)
     net_revenue = serializers.DecimalField(max_digits=18, decimal_places=2)
     profit = serializers.DecimalField(max_digits=18, decimal_places=2)
 

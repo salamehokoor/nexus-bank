@@ -1,7 +1,4 @@
-"""
-API views for accounts, cards, transfers, bill payments, notifications, 2FA auth, and social login.
-All endpoints enforce authentication and ownership scoping where applicable.
-"""
+from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
@@ -19,10 +16,9 @@ from risk.transaction_logging import (
     log_failed_transfer_attempt,
     log_transaction_event,
 )
-from .models import Account, BillPayment, Card, Notification, OTPVerification, Transaction
+from .models import Account, BillPayment, Card, Notification, OTPVerification, Transaction, TransferOTP
 from .serializers import (
     AccountSerializer,
-    BillPaymentSerializer,
     BillPaymentSerializer,
     CardSerializer,
     CardUpdateSerializer,
@@ -35,8 +31,6 @@ from .serializers import (
     TokenResponseSerializer,
     TransactionSerializer,
 )
-
-User = get_user_model()
 
 User = get_user_model()
 
@@ -179,8 +173,16 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         try:
             serializer.is_valid(raise_exception=True)
+            
+            # Use Decimal here now that it is imported
+            amount = serializer.validated_data.get("amount", Decimal("0.00"))
+            
+            # Determine logic based on status
+            is_high_value = amount > Decimal("500.00")
+            initial_status = Transaction.Status.PENDING_OTP if is_high_value else Transaction.Status.SUCCESS
+
             try:
-                tx = serializer.save()
+                tx = serializer.save(status=initial_status)
             except ValueError as exc:
                 raise ValidationError({"detail": str(exc)})
         except ValidationError as exc:
@@ -197,6 +199,30 @@ class InternalTransferListCreateView(generics.ListCreateAPIView):
             log_transaction_event(request=request,
                                   user=request.user,
                                   transaction=tx)
+
+        # OTP Handling for High Value
+        if is_high_value:
+            # Generate OTP & Send Email
+            auth_otp, raw_code = TransferOTP.generate(request.user, tx)
+            
+            send_mail(
+                subject="Nexus Bank - Confirm Your Transfer",
+                message=f"Your transfer verification code is: {raw_code}\n\n"
+                        f"Amount: {amount}\n"
+                        f"This code expires in 5 minutes.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[request.user.email],
+                fail_silently=False,
+            )
+            
+            return Response(
+                {
+                    "otp_required": True, 
+                    "transfer_id": str(tx.id),
+                    "message": "OTP sent to email. Please verify to complete transfer."
+                },
+                status=status.HTTP_200_OK,
+            )
 
         return Response(
             TransactionSerializer(tx, context={
@@ -241,8 +267,13 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         try:
             serializer.is_valid(raise_exception=True)
+            
+            amount = serializer.validated_data.get("amount", Decimal("0.00"))
+            is_high_value = amount > Decimal("500.00")
+            initial_status = Transaction.Status.PENDING_OTP if is_high_value else Transaction.Status.SUCCESS
+
             try:
-                tx = serializer.save()
+                tx = serializer.save(status=initial_status)
             except ValueError as exc:
                 raise ValidationError({"detail": str(exc)})
         except ValidationError as exc:
@@ -260,13 +291,35 @@ class ExternalTransferListCreateView(generics.ListCreateAPIView):
                                   user=request.user,
                                   transaction=tx)
 
+        if is_high_value:
+             # Generate OTP & Send Email
+            auth_otp, raw_code = TransferOTP.generate(request.user, tx)
+            
+            send_mail(
+                subject="Nexus Bank - Confirm Your Transfer",
+                message=f"Your transfer verification code is: {raw_code}\n\n"
+                        f"Amount: {amount}\n"
+                        f"This code expires in 5 minutes.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[request.user.email],
+                fail_silently=False,
+            )
+            
+            return Response(
+                {
+                    "otp_required": True, 
+                    "transfer_id": str(tx.id),
+                    "message": "OTP sent to email. Please verify to complete transfer."
+                },
+                status=status.HTTP_200_OK,
+            )
+
         return Response(
             TransactionSerializer(tx, context={
                 "request": request
             }).data,
             status=status.HTTP_201_CREATED,
         )
-
 
 class BillPaymentListCreateView(generics.ListCreateAPIView):
     """List/create bill payments for the authenticated user."""
@@ -503,40 +556,77 @@ class LoginVerifyView(APIView):
         })
 
 
-class GenerateTransactionOTPView(APIView):
+class TransferConfirmationView(APIView):
     """
-    Generate OTP for high-value transaction authorization (amounts > 500).
+    POST /transfers/confirm/
+    Confirm a Pending Transfer using OTP.
     """
-
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
-        summary="Generate Transaction OTP",
-        description="Request an OTP code for authorizing high-value transfers (> 500). "
-                    "The code is sent to the authenticated user's email.",
-        request=None,
-        responses={
-            200: OTPSentResponseSerializer,
-            401: OpenApiResponse(description="Authentication required"),
+        summary="Confirm Pending Transfer",
+        description="Verify OTP for a high-value pending transfer and execute it.",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "transfer_id": {"type": "integer"},
+                    "otp": {"type": "string"},
+                },
+                "required": ["transfer_id", "otp"],
+            }
         },
-        tags=["Authentication"],
+        responses={
+            200: TransactionSerializer,
+            400: OpenApiResponse(description="Invalid OTP or Transfer ID"),
+            423: OpenApiResponse(description="OTP Limit Reached"),
+        }
     )
     def post(self, request):
-        user = request.user
+        transfer_id = request.data.get("transfer_id")
+        otp_code = request.data.get("otp")
 
-        # Generate TRANSACTION OTP
-        otp = OTPVerification.generate(user, OTPVerification.Purpose.TRANSACTION)
+        if not transfer_id or not otp_code:
+            return Response({"detail": "Missing transfer_id or otp."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Send OTP via email
-        send_mail(
-            subject="Nexus Bank - Transaction Authorization Code",
-            message=f"Your transaction authorization code is: {otp.code}\n\nThis code expires in 5 minutes.\n\nIf you did not request this code, please contact support immediately.",
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
+        # 1. Get Transaction
+        # Check permissions: must belong to user
+        tx = get_object_or_404(Transaction, pk=transfer_id, sender_account__user=request.user)
+        
+        if tx.status != Transaction.Status.PENDING_OTP:
+            return Response({"detail": "This transfer is not pending OTP."}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(
-            {"detail": "OTP sent to email"},
-            status=status.HTTP_200_OK,
-        )
+        # 2. Get OTP
+        try:
+            transfer_otp = tx.otp_request
+        except TransferOTP.DoesNotExist:
+            return Response({"detail": "No OTP found for this transfer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3. Verify
+        # Check lock status first
+        if transfer_otp.attempts >= TransferOTP.MAX_ATTEMPTS:
+             return Response({"detail": "Too many failed attempts. Transfer locked."}, status=status.HTTP_423_LOCKED)
+
+        if not transfer_otp.verify(otp_code):
+             return Response({
+                 "detail": "Invalid or expired OTP.",
+                 "attempts_left": TransferOTP.MAX_ATTEMPTS - transfer_otp.attempts
+             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4. Execute Transfer
+        try:
+            # Mark OTP as used
+            transfer_otp.is_used = True
+            transfer_otp.save(update_fields=['is_used'])
+            
+            # Update Status and Execute
+            tx.status = Transaction.Status.SUCCESS
+            tx.execute_transaction()
+            
+            return Response(TransactionSerializer(tx).data, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            # e.g. Unsufficient funds since PENDING state (unlikely but possible)
+            tx.status = Transaction.Status.FAILED
+            tx.save(update_fields=['status'])
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)

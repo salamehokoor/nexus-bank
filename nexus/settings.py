@@ -288,7 +288,7 @@ CSRF_FAILURE_VIEW = "risk.views.csrf_failure_view"
 
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer", ),
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     #"ROTATE_REFRESH_TOKENS": True,
     #"BLACKLIST_AFTER_ROTATION": True,
@@ -364,7 +364,7 @@ ACCOUNT_EMAIL_VERIFICATION = "optional"  # or "mandatory" if you want confirmati
 
 # Admin panel uses the default Django login URL
 LOGIN_URL = "/admin/login/"
-LOGIN_REDIRECT_URL = "/admin/"
+LOGIN_REDIRECT_URL = "/auth/social/complete/"
 LOGOUT_REDIRECT_URL = "/"
 
 AUTHENTICATION_BACKENDS = [
@@ -382,6 +382,7 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 
 SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+SOCIALACCOUNT_ADAPTER = "risk.adapters.CustomSocialAccountAdapter"
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
@@ -416,7 +417,7 @@ if not EMAIL_HOST_USER or not EMAIL_HOST_PASSWORD:
         EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or "noreply@nexus-banking.com"
 
-AXES_FAILURE_LIMIT = 5  # lock after 5 tries
+AXES_FAILURE_LIMIT = 15 # lock after 5 tries
 AXES_LOCK_OUT_AT_FAILURE = True
 AXES_COOLOFF_TIME = 1  # hours before unlock
 AXES_ENABLED = True

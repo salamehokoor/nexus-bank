@@ -258,6 +258,7 @@ def summarize_range(start_date, end_date) -> Dict[str, Decimal]:
         fee_revenue=Sum("fee_revenue"),
         bill_commission_revenue=Sum("bill_commission_revenue"),
         fx_spread_revenue=Sum("fx_spread_revenue"),
+        fx_volume=Sum("fx_volume"),
         net_revenue=Sum("net_revenue"),
         profit=Sum("profit"),
     )

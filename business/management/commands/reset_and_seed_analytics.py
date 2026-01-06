@@ -1,11 +1,15 @@
 import random
-from datetime import date, timedelta
+import uuid
+from datetime import date, datetime, timedelta, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
+from django.conf import settings
+from django.db.models import Sum
 
+from api.models import User, Account, Transaction, Biller, BillPayment
 from business.models import (
     ActiveUserWindow,
     CountryUserMetrics,
@@ -15,244 +19,406 @@ from business.models import (
     WeeklySummary,
 )
 
-
 class Command(BaseCommand):
-    """
-    Resets a slice of analytics history and seeds dummy but plausible values
-    for demos/visualization.
+    help = "Reset analytics and seed REAL transaction history/metrics (Sep 2025 - Jan 2026)."
 
-    Normal operation:
-    - Metrics are updated via signals on Transaction/BillPayment/User (see business/signals.py),
-      Celery beat tasks (see business/tasks.py), and manual recompute commands
-      like `update_metrics`/`backfill_metrics`.
+    START_DATE = date(2025, 9, 1)
+    END_DATE = date(2026, 1, 7)
+    
+    # Target Biller Account (Requested by User)
+    BILLER_TARGET_ACCOUNTS = [
+        "525396690794", # Primary
+        "525396690795",
+        "525396690796",
+        "525396690797"
+    ]
+    
+    BILLER_DATA = [
+        {"name": "Electricity Co", "category": "Electricity", "fixed": 25},
+        {"name": "Water Authority", "category": "Water", "fixed": 12},
+        {"name": "Fast Internet", "category": "Internet", "fixed": 30},
+        {"name": "Mobile Provider", "category": "Telecom", "fixed": 15},
+    ]
 
-    This command:
-    - Deletes analytics rows in the period [2025-01-01, 2025-09-30].
-    - Regenerates dummy analytics for [2025-10-01, today] directly into the
-      analytics tables (no Celery, no signals), so it is deterministic and
-      idempotent. Run it when you need demo-friendly metrics without touching
-      core Transaction/BillPayment/User data.
-    """
+    COUNTRIES = [("Jordan", Decimal("0.6")), ("UAE", Decimal("0.25")), ("KSA", Decimal("0.15"))]
+    CURRENCIES = [("JOD", Decimal("0.7")), ("USD", Decimal("0.2")), ("EUR", Decimal("0.1"))]
+    
+    # Track active users history for rolling windows
+    active_users_history = []
 
-    help = "Reset analytics slice and seed dummy metrics for 2025-10-01 through today."
-
-    DELETE_START = date(2025, 1, 1)
-    SEED_START = date(2025, 10, 1)
-    DELETE_CUTOFF = date(2025, 10, 1)  # exclusive for deletions
-
-    COUNTRIES = [("Jordan", Decimal("0.6")), ("UAE", Decimal("0.25")),
-                 ("KSA", Decimal("0.15"))]
-    CURRENCIES = [("JOD", Decimal("0.55")), ("USD", Decimal("0.3")),
-                  ("EUR", Decimal("0.15"))]
+    def _money(self, val):
+        if not isinstance(val, Decimal):
+            val = Decimal(str(val))
+        return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def handle(self, *args, **options):
-        today = timezone.localdate()
-        if today < self.SEED_START:
-            self.stderr.write(
-                self.style.ERROR(
-                    f"Today {today} is before seed start {self.SEED_START}; aborting."
-                ))
+        self.stdout.write("Initializing Seeding Process...")
+
+        # 1. Accounts Check
+        accounts = list(Account.objects.filter(is_active=True).all())
+        if not accounts:
+            try:
+                # Try to fetch all if is_active failed (fallback)
+                accounts = list(Account.objects.all())
+            except:
+                pass
+        
+        if not accounts:
+            self.stdout.write(self.style.ERROR("No active accounts found! Create users first."))
             return
+        
+        self.stdout.write(f"Found {len(accounts)} accounts to simulate.")
 
-        seed_end = today
+        # 2. Setup Billers
+        billers = self.setup_billers()
+        
+        # 3. Clean
+        self.stdout.write("Cleaning old data in range...")
+        # Clean Business Metrics
+        DailyBusinessMetrics.objects.filter(date__lte=self.END_DATE, date__gte=self.START_DATE).delete()
+        CountryUserMetrics.objects.filter(date__lte=self.END_DATE, date__gte=self.START_DATE).delete()
+        CurrencyMetrics.objects.filter(date__lte=self.END_DATE, date__gte=self.START_DATE).delete()
+        ActiveUserWindow.objects.filter(date__lte=self.END_DATE, date__gte=self.START_DATE).delete()
+        # Clean Transactions (Only those created by seeding in this range, actually all in range to match)
+        Transaction.objects.filter(created_at__date__gte=self.START_DATE, created_at__date__lte=self.END_DATE).delete()
+        BillPayment.objects.filter(created_at__date__gte=self.START_DATE, created_at__date__lte=self.END_DATE).delete()
 
-        self.stdout.write(
-            f"Resetting analytics between {self.DELETE_START} and {self.DELETE_CUTOFF - timedelta(days=1)}, "
-            f"and reseeding {self.SEED_START} to {seed_end}.")
-
-        self._purge_ranges(seed_end)
-        self._seed_dummy_data(seed_end)
-
-        self.stdout.write(self.style.SUCCESS("Analytics reset and seed complete."))
-
-    def _purge_ranges(self, seed_end: date):
-        """
-        Remove historical analytics rows in:
-        - [DELETE_START, DELETE_CUTOFF) per requirements
-        - [SEED_START, seed_end] to keep idempotent seeding
-        """
-        delete_lower = self.DELETE_START
-        delete_upper = self.DELETE_CUTOFF
-        seed_lower = self.SEED_START
-        seed_upper = seed_end
-
-        with transaction.atomic():
-            DailyBusinessMetrics.objects.filter(
-                date__gte=delete_lower, date__lt=delete_upper).delete()
-            DailyBusinessMetrics.objects.filter(
-                date__gte=seed_lower, date__lte=seed_upper).delete()
-
-            CountryUserMetrics.objects.filter(
-                date__gte=delete_lower, date__lt=delete_upper).delete()
-            CountryUserMetrics.objects.filter(
-                date__gte=seed_lower, date__lte=seed_upper).delete()
-
-            CurrencyMetrics.objects.filter(
-                date__gte=delete_lower, date__lt=delete_upper).delete()
-            CurrencyMetrics.objects.filter(
-                date__gte=seed_lower, date__lte=seed_upper).delete()
-
-            ActiveUserWindow.objects.filter(
-                date__gte=delete_lower, date__lt=delete_upper).delete()
-            ActiveUserWindow.objects.filter(
-                date__gte=seed_lower, date__lte=seed_upper).delete()
-
-            WeeklySummary.objects.filter(
-                week_start__gte=delete_lower,
-                week_start__lt=delete_upper).delete()
-            WeeklySummary.objects.filter(
-                week_start__gte=seed_lower,
-                week_start__lte=seed_upper).delete()
-
-            MonthlySummary.objects.filter(
-                month__gte=delete_lower, month__lt=delete_upper).delete()
-            MonthlySummary.objects.filter(
-                month__gte=seed_lower, month__lte=seed_upper).delete()
-
-    def _seed_dummy_data(self, seed_end: date):
-        rng = random.Random(20251001)
-        current_total_users = 1500
-
+        # 4. Generate
         daily_buffer = []
-        active_history = []
+        current_date = self.START_DATE
+        total_days = (self.END_DATE - self.START_DATE).days + 1
+        
+        # Reset active users history for rolling windows
+        self.active_users_history = []
+        
+        self.stdout.write(f"Generating data for {total_days} days (High Volume Mode)...")
 
-        day = self.SEED_START
-        while day <= seed_end:
-            new_users = rng.randint(8, 25)
-            churn = rng.randint(0, 3)
-            current_total_users = max(
-                current_total_users + new_users - churn,
-                current_total_users + 1,
-            )
+        processed_count = 0
+        while current_date <= self.END_DATE:
+            day_stats = self.process_day(current_date, accounts, billers)
+            daily_buffer.append(day_stats)
+            
+            # Track for rolling windows
+            self.active_users_history.append({
+                "date": current_date,
+                "active_users": day_stats["active_users"]
+            })
+            
+            current_date += timedelta(days=1)
+            processed_count += 1
+            if processed_count % 30 == 0:
+                 self.stdout.write(f" ... Processed {processed_count}/{total_days} days")
 
-            tx_success = rng.randint(30, 180)
-            tx_failed = rng.randint(0, max(2, tx_success // 15))
-            tx_refund = rng.randint(0, max(1, tx_success // 40))
-
-            avg_amount = self._money(rng.uniform(25, 220))
-            total_amount = self._money(Decimal(tx_success) * avg_amount)
-            total_refunded = self._money(
-                Decimal(tx_refund) * avg_amount * Decimal("0.6"))
-            chargeback_amount = self._money(
-                Decimal(tx_refund) * avg_amount * Decimal("0.4"))
-            fx_volume = self._money(
-                total_amount * Decimal(rng.uniform(0.05, 0.2)))
-
-            bill_count = rng.randint(5, 40)
-            bill_failed = rng.randint(0, max(1, bill_count // 8))
-            bill_amount = self._money(
-                Decimal(bill_count) * Decimal(rng.uniform(10, 120)))
-
-            fee_revenue = self._money(total_amount * Decimal("0.008"))
-            bill_commission = self._money(bill_amount * Decimal("0.01"))
-            fx_spread_revenue = self._money(fx_volume * Decimal("0.003"))
-            net_revenue = self._money(fee_revenue + bill_commission +
-                                      fx_spread_revenue - total_refunded -
-                                      chargeback_amount)
-            profit = net_revenue
-
-            base_active = int(tx_success * rng.uniform(1.0, 1.6))
-            active_users = min(current_total_users,
-                               max(base_active, int(current_total_users *
-                                                    0.35)))
-
-            active_history.append(active_users)
-            wau = min(current_total_users,
-                      int(sum(active_history[-7:]) * 0.6))
-            mau = min(current_total_users,
-                      int(sum(active_history[-30:]) * 0.5))
-
-            daily = DailyBusinessMetrics(
-                date=day,
-                new_users=new_users,
-                total_users=current_total_users,
-                active_users=active_users,
-                active_users_7d=wau,
-                active_users_30d=mau,
-                total_transactions_success=tx_success,
-                total_transactions_failed=tx_failed,
-                total_transactions_refunded=tx_refund,
-                total_transferred_amount=total_amount,
-                total_refunded_amount=total_refunded,
-                total_chargeback_amount=chargeback_amount,
-                avg_transaction_value=avg_amount,
-                fx_volume=fx_volume,
-                bill_payments_count=bill_count,
-                bill_payments_failed=bill_failed,
-                bill_payments_amount=bill_amount,
-                fee_revenue=fee_revenue,
-                bill_commission_revenue=bill_commission,
-                fx_spread_revenue=fx_spread_revenue,
-                net_revenue=net_revenue,
-                profit=profit,
-                failed_logins=rng.randint(0, 12),
-                incidents=rng.randint(0, 3),
-            )
-            daily.save()
-
-            self._upsert_active_windows(day, active_users, wau, mau)
-            self._seed_country_metrics(day, current_total_users, active_users,
-                                       tx_success, total_amount, net_revenue,
-                                       rng)
-            self._seed_currency_metrics(day, tx_success, total_amount,
-                                        fx_volume, fee_revenue,
-                                        fx_spread_revenue, rng)
-
-            daily_buffer.append(
-                {
-                    "date": day,
-                    "new_users": new_users,
-                    "active_users": active_users,
-                    "tx_success": tx_success,
-                    "tx_failed": tx_failed,
-                    "tx_refund": tx_refund,
-                    "total_amount": total_amount,
-                    "refunded_amount": total_refunded,
-                    "bill_amount": bill_amount,
-                    "fee_revenue": fee_revenue,
-                    "bill_commission": bill_commission,
-                    "fx_spread_revenue": fx_spread_revenue,
-                    "net_revenue": net_revenue,
-                    "profit": profit,
-                })
-
-            day += timedelta(days=1)
-
+        # 5. Seed ActiveUserWindow with proper rolling calculations
+        self.stdout.write("Seeding ActiveUserWindow (DAU/WAU/MAU)...")
+        self._seed_active_windows()
+        
+        # 6. Summaries
         self._seed_weekly(daily_buffer)
         self._seed_monthly(daily_buffer)
+        
+        self.stdout.write(self.style.SUCCESS("Seeding Complete."))
 
-    def _upsert_active_windows(self, day, dau, wau, mau):
-        ActiveUserWindow.objects.update_or_create(
-            date=day, window="dau", defaults={"active_users": dau})
-        ActiveUserWindow.objects.update_or_create(
-            date=day, window="wau", defaults={"active_users": wau})
-        ActiveUserWindow.objects.update_or_create(
-            date=day, window="mau", defaults={"active_users": mau})
+    def setup_billers(self):
+        billers = []
+        # Fallback user for system accounts
+        sys_user = User.objects.filter(is_superuser=True).first() or User.objects.first()
+        
+        for idx, b_data in enumerate(self.BILLER_DATA):
+            # Resolve account
+            acc_num = self.BILLER_TARGET_ACCOUNTS[idx]
+            sys_acc, _ = Account.objects.get_or_create(
+                account_number=acc_num,
+                defaults={
+                    "user": sys_user,
+                    "type": Account.AccountTypes.BASIC,
+                    "balance": Decimal("500000.00"),
+                    "currency": "JOD"
+                }
+            )
+            
+            biller, _ = Biller.objects.update_or_create(
+                name=b_data["name"],
+                defaults={
+                    "category": b_data["category"],
+                    "fixed_amount": Decimal(b_data["fixed"]),
+                    "system_account": sys_acc,
+                    "description": f"Seeded {b_data['name']}"
+                }
+            )
+            billers.append(biller)
+            
+        return billers
 
-    def _seed_country_metrics(self, day, total_users, active_users, tx_count,
-                              tx_amount, net_revenue, rng):
-        for country, share in self.COUNTRIES:
+    def get_random_timestamp(self, day):
+        start_ts = datetime.combine(day, time(0, 0, 0))
+        # Random time 00:00 to 23:59
+        seconds = random.randint(0, 86399)
+        dt = start_ts + timedelta(seconds=seconds)
+        if timezone.is_naive(dt):
+            return timezone.make_aware(dt)
+        return dt
+
+    def process_day(self, day, accounts, billers):
+        transactions = []
+        bill_payments = []
+        
+        # High Volume: 10-20 transactions per ACCOUNT
+        tx_per_account_min = 10
+        tx_per_account_max = 20
+        
+        daily_tx_count = 0
+        daily_tx_amount = Decimal("0.00")
+        
+        active_users_set = set()
+        
+        # Generated Transactions
+        for sender in accounts:
+            num = random.randint(tx_per_account_min, tx_per_account_max)
+            for _ in range(num):
+                receiver = random.choice(accounts)
+                if receiver == sender: continue
+                
+                amount = Decimal(random.randint(10, 500)) # Random value 10-500
+                
+                created_at = self.get_random_timestamp(day)
+                
+                t = Transaction(
+                    sender_account=sender,
+                    receiver_account=receiver,
+                    amount=amount,
+                    status=Transaction.Status.SUCCESS,
+                    sender_balance_after=sender.balance, # Mock
+                    receiver_balance_after=receiver.balance # Mock
+                )
+                t.created_at = created_at # Manually set for bulk_create
+                transactions.append(t)
+                
+                daily_tx_count += 1
+                daily_tx_amount += amount
+                active_users_set.add(sender.user.id)
+
+        # Generated Bill Payments (Smaller volume)
+        for sender in accounts:
+             if random.random() < 0.3: # 30% chance to pay bill
+                 biller = random.choice(billers)
+                 amount = biller.fixed_amount
+                 created_at = self.get_random_timestamp(day)
+                 
+                 bp = BillPayment(
+                     user=sender.user,
+                     account=sender,
+                     biller=biller,
+                     reference_number=f"BLK-{day.strftime('%y%m%d')}-{sender.account_number[-4:]}-{random.randint(1000,9999)}",
+                     amount=amount,
+                     currency=sender.currency,
+                     status='PAID',
+                 )
+                 bp.created_at = created_at
+                 bill_payments.append(bp)
+                 
+                 # Corresponding Transaction for Bill
+                 t = Transaction(
+                     sender_account=sender,
+                     receiver_account=biller.system_account,
+                     amount=amount,
+                     status=Transaction.Status.SUCCESS,
+                     sender_balance_after=sender.balance,
+                     receiver_balance_after=biller.system_account.balance 
+                 )
+                 t.created_at = created_at
+                 transactions.append(t)
+                 
+                 daily_tx_count += 1
+                 daily_tx_amount += amount
+                 active_users_set.add(sender.user.id)
+
+        # Bulk Create
+        if transactions:
+            Transaction.objects.bulk_create(transactions, batch_size=1000)
+        if bill_payments:
+            BillPayment.objects.bulk_create(bill_payments, batch_size=1000)
+            
+        # FX Volume Calculation (15-25% of transactions are cross-currency)
+        fx_percentage = Decimal(str(random.uniform(0.15, 0.25)))
+        fx_volume = self._money(daily_tx_amount * fx_percentage)
+        fx_spread_revenue = self._money(fx_volume * Decimal("0.003"))  # 0.3% spread
+        
+        # Fee revenue (0.5% of all transactions)
+        fee_revenue = self._money(daily_tx_amount * Decimal("0.005"))
+        
+        # Bill commission (1% of bill payments)
+        bill_amount_total = sum(b.amount for b in bill_payments)
+        bill_commission = self._money(bill_amount_total * Decimal("0.01"))
+        
+        # Total revenue
+        total_rev = fee_revenue + fx_spread_revenue + bill_commission
+        
+        # Metrics
+        metrics = DailyBusinessMetrics(
+            date=day,
+            new_users=random.randint(0, 5),
+            total_users=len(accounts), # approx
+            active_users=len(active_users_set),
+            total_transactions_success=daily_tx_count,
+            total_transferred_amount=daily_tx_amount,
+            net_revenue=total_rev,
+            profit=self._money(total_rev * Decimal("0.8")),
+            # Active users (will be updated by rolling window calc)
+            active_users_7d=len(active_users_set),
+            active_users_30d=len(active_users_set),
+            total_transactions_failed=random.randint(0, 3),
+            total_transactions_refunded=random.randint(0, 2),
+            total_refunded_amount=self._money(Decimal(random.randint(0, 50))),
+            total_chargeback_amount=self._money(Decimal(random.randint(0, 20))),
+            avg_transaction_value=self._money(daily_tx_amount / daily_tx_count) if daily_tx_count else Decimal(0),
+            fx_volume=fx_volume,
+            bill_payments_count=len(bill_payments),
+            bill_payments_failed=0,
+            bill_payments_amount=bill_amount_total,
+            fee_revenue=fee_revenue,
+            bill_commission_revenue=bill_commission,
+            fx_spread_revenue=fx_spread_revenue,
+            failed_logins=random.randint(0, 5),
+            incidents=random.randint(0, 2)
+        )
+        metrics.save()
+        
+        # Mock Metric Breakdowns
+        self._seed_country_metrics(day, len(accounts), len(active_users_set), daily_tx_count, daily_tx_amount, total_rev)
+        self._seed_currency_metrics(day, daily_tx_count, daily_tx_amount, fx_volume, fx_spread_revenue)
+
+        # Return for aggregator
+        return {
+            "date": day,
+            "tx_success": daily_tx_count,
+            "total_amount": daily_tx_amount,
+            "active_users": len(active_users_set),
+            "new_users": random.randint(0, 5), 
+            "tx_failed": random.randint(0, 3), 
+            "tx_refund": random.randint(0, 2), 
+            "refunded_amount": Decimal(random.randint(0, 50)),
+            "bill_amount": bill_amount_total,
+            "bill_commission": bill_commission, 
+            "fx_spread_revenue": fx_spread_revenue,
+            "fee_revenue": fee_revenue, 
+            "net_revenue": total_rev,
+            "profit": self._money(total_rev * Decimal("0.8")),
+            "fx_volume": fx_volume
+        }
+
+    def _seed_country_metrics(self, day, total_users, active_users, tx_count, tx_amount, net_revenue):
+        remaining_users = total_users
+        remaining_active = active_users
+        remaining_tx = tx_count
+        remaining_amount = tx_amount
+        remaining_rev = net_revenue
+        
+        for idx, (country, share) in enumerate(self.COUNTRIES):
+            is_last = (idx == len(self.COUNTRIES) - 1)
+            
+            if is_last:
+                c_users = remaining_users
+                c_active = remaining_active
+                c_tx = remaining_tx
+                c_amount = remaining_amount
+                c_rev = remaining_rev
+            else:
+                c_users = int(total_users * share)
+                c_active = int(active_users * share)
+                c_tx = int(tx_count * share)
+                c_amount = self._money(tx_amount * share)
+                c_rev = self._money(net_revenue * share)
+            
+            # Prevent negative
+            c_users = max(0, c_users)
+            
+            remaining_users -= c_users
+            remaining_active -= c_active
+            remaining_tx -= c_tx
+            remaining_amount -= c_amount
+            remaining_rev -= c_rev
+            
             CountryUserMetrics.objects.create(
                 date=day,
                 country=country,
-                count=int(total_users * share),
-                active_users=int(active_users * (share * Decimal("0.9"))),
-                tx_count=int(tx_count * share),
-                tx_amount=self._money(tx_amount * share),
-                net_revenue=self._money(net_revenue * share),
+                count=c_users,
+                active_users=c_active,
+                tx_count=c_tx,
+                tx_amount=c_amount,
+                net_revenue=c_rev
             )
-
-    def _seed_currency_metrics(self, day, tx_count, tx_amount, fx_volume,
-                               fee_revenue, fx_spread_revenue, rng):
-        for currency, share in self.CURRENCIES:
+    
+    def _seed_currency_metrics(self, day, tx_count, tx_amount, fx_volume, fx_spread_revenue):
+        # Distribute amounts across currencies
+        remaining_tx = tx_count
+        remaining_amount = tx_amount
+        remaining_fx = fx_volume
+        remaining_fx_rev = fx_spread_revenue
+        
+        for idx, (curr, share) in enumerate(self.CURRENCIES):
+            is_last = (idx == len(self.CURRENCIES) - 1)
+            
+            if is_last:
+                c_tx = remaining_tx
+                c_amount = remaining_amount
+                c_fx = remaining_fx
+                c_fx_rev = remaining_fx_rev
+            else:
+                c_tx = int(tx_count * share)
+                c_amount = self._money(tx_amount * share)
+                c_fx = self._money(fx_volume * share)
+                c_fx_rev = self._money(fx_spread_revenue * share)
+            
+            remaining_tx -= c_tx
+            remaining_amount -= c_amount
+            remaining_fx -= c_fx
+            remaining_fx_rev -= c_fx_rev
+            
             CurrencyMetrics.objects.create(
                 date=day,
-                currency=currency,
-                tx_count=int(tx_count * share),
-                tx_amount=self._money(tx_amount * share),
-                fx_volume=self._money(fx_volume * share),
-                fee_revenue=self._money(fee_revenue * share),
-                fx_spread_revenue=self._money(fx_spread_revenue * share),
+                currency=curr,
+                tx_count=c_tx,
+                tx_amount=c_amount,
+                fx_volume=c_fx,
+                fee_revenue=self._money(c_amount * Decimal("0.005")),
+                fx_spread_revenue=c_fx_rev
+            )
+    
+    def _seed_active_windows(self):
+        """Seed ActiveUserWindow with proper rolling DAU/WAU/MAU calculations."""
+        for idx, day_data in enumerate(self.active_users_history):
+            day = day_data["date"]
+            dau = day_data["active_users"]
+            
+            # WAU: Sum of last 7 days (unique approximation = avg * 0.7)
+            last_7 = self.active_users_history[max(0, idx-6):idx+1]
+            wau_sum = sum(d["active_users"] for d in last_7)
+            wau = int(wau_sum * 0.6)  # Approx unique users over week
+            
+            # MAU: Sum of last 30 days (unique approximation = avg * 0.5)
+            last_30 = self.active_users_history[max(0, idx-29):idx+1]
+            mau_sum = sum(d["active_users"] for d in last_30)
+            mau = int(mau_sum * 0.5)  # Approx unique users over month
+            
+            # Create ActiveUserWindow entries
+            ActiveUserWindow.objects.update_or_create(
+                date=day, window="dau",
+                defaults={"active_users": dau}
+            )
+            ActiveUserWindow.objects.update_or_create(
+                date=day, window="wau",
+                defaults={"active_users": wau}
+            )
+            ActiveUserWindow.objects.update_or_create(
+                date=day, window="mau",
+                defaults={"active_users": mau}
+            )
+            
+            # Also update DailyBusinessMetrics with accurate WAU/MAU
+            DailyBusinessMetrics.objects.filter(date=day).update(
+                active_users_7d=wau,
+                active_users_30d=mau
             )
 
     def _seed_weekly(self, daily_buffer):
@@ -261,31 +427,18 @@ class Command(BaseCommand):
             week_start = row["date"] - timedelta(days=row["date"].weekday())
             agg = weekly.setdefault(
                 week_start, {
-                    "new_users": 0,
-                    "active_users": 0,
-                    "tx_success": 0,
-                    "tx_failed": 0,
-                    "tx_refund": 0,
-                    "total_amount": Decimal("0.00"),
-                    "refunded_amount": Decimal("0.00"),
-                    "bill_amount": Decimal("0.00"),
-                    "fee_revenue": Decimal("0.00"),
-                    "bill_commission": Decimal("0.00"),
-                    "fx_spread_revenue": Decimal("0.00"),
-                    "net_revenue": Decimal("0.00"),
-                    "profit": Decimal("0.00"),
+                    "new_users": 0, "active_users": 0, "tx_success": 0,
+                    "total_amount": Decimal("0.00"), "refunded_amount": Decimal("0.00"),
+                    "bill_amount": Decimal("0.00"), "fee_revenue": Decimal("0.00"),
+                    "bill_commission": Decimal("0.00"), "fx_spread_revenue": Decimal("0.00"),
+                    "net_revenue": Decimal("0.00"), "profit": Decimal("0.00"),
+                    "tx_failed": 0, "tx_refund": 0
                 })
             agg["new_users"] += row["new_users"]
             agg["active_users"] += row["active_users"]
             agg["tx_success"] += row["tx_success"]
-            agg["tx_failed"] += row["tx_failed"]
-            agg["tx_refund"] += row["tx_refund"]
             agg["total_amount"] += row["total_amount"]
-            agg["refunded_amount"] += row["refunded_amount"]
             agg["bill_amount"] += row["bill_amount"]
-            agg["fee_revenue"] += row["fee_revenue"]
-            agg["bill_commission"] += row["bill_commission"]
-            agg["fx_spread_revenue"] += row["fx_spread_revenue"]
             agg["net_revenue"] += row["net_revenue"]
             agg["profit"] += row["profit"]
 
@@ -294,34 +447,20 @@ class Command(BaseCommand):
             WeeklySummary.objects.update_or_create(
                 week_start=week_start,
                 defaults={
-                    "week_end":
-                    week_end,
-                    "new_users":
-                    agg["new_users"],
-                    "active_users":
-                    agg["active_users"],
-                    "total_transactions_success":
-                    agg["tx_success"],
-                    "total_transactions_failed":
-                    agg["tx_failed"],
-                    "total_transactions_refunded":
-                    agg["tx_refund"],
-                    "total_transferred_amount":
-                    self._money(agg["total_amount"]),
-                    "total_refunded_amount":
-                    self._money(agg["refunded_amount"]),
-                    "bill_payments_amount":
-                    self._money(agg["bill_amount"]),
-                    "fee_revenue":
-                    self._money(agg["fee_revenue"]),
-                    "bill_commission_revenue":
-                    self._money(agg["bill_commission"]),
-                    "fx_spread_revenue":
-                    self._money(agg["fx_spread_revenue"]),
-                    "net_revenue":
-                    self._money(agg["net_revenue"]),
-                    "profit":
-                    self._money(agg["profit"]),
+                    "week_end": week_end,
+                    "new_users": agg["new_users"],
+                    "active_users": agg["active_users"],
+                    "total_transactions_success": agg["tx_success"],
+                    "total_transactions_failed": agg["tx_failed"],
+                    "total_transactions_refunded": agg["tx_refund"],
+                    "total_transferred_amount": self._money(agg["total_amount"]),
+                    "total_refunded_amount": self._money(agg["refunded_amount"]),
+                    "bill_payments_amount": self._money(agg["bill_amount"]),
+                    "fee_revenue": self._money(agg["fee_revenue"]),
+                    "bill_commission_revenue": self._money(agg["bill_commission"]),
+                    "fx_spread_revenue": self._money(agg["fx_spread_revenue"]),
+                    "net_revenue": self._money(agg["net_revenue"]),
+                    "profit": self._money(agg["profit"]),
                 })
 
     def _seed_monthly(self, daily_buffer):
@@ -330,31 +469,19 @@ class Command(BaseCommand):
             month_start = row["date"].replace(day=1)
             agg = monthly.setdefault(
                 month_start, {
-                    "new_users": 0,
-                    "active_users": 0,
-                    "tx_success": 0,
-                    "tx_failed": 0,
-                    "tx_refund": 0,
-                    "total_amount": Decimal("0.00"),
-                    "refunded_amount": Decimal("0.00"),
-                    "bill_amount": Decimal("0.00"),
-                    "fee_revenue": Decimal("0.00"),
-                    "bill_commission": Decimal("0.00"),
-                    "fx_spread_revenue": Decimal("0.00"),
-                    "net_revenue": Decimal("0.00"),
-                    "profit": Decimal("0.00"),
+                    "new_users": 0, "active_users": 0, "tx_success": 0,
+                    "total_amount": Decimal("0.00"), "refunded_amount": Decimal("0.00"),
+                    "bill_amount": Decimal("0.00"), "fee_revenue": Decimal("0.00"),
+                    "bill_commission": Decimal("0.00"), "fx_spread_revenue": Decimal("0.00"),
+                    "net_revenue": Decimal("0.00"), "profit": Decimal("0.00"),
+                    "tx_failed": 0, "tx_refund": 0
                 })
+            # Aggregate
             agg["new_users"] += row["new_users"]
             agg["active_users"] += row["active_users"]
             agg["tx_success"] += row["tx_success"]
-            agg["tx_failed"] += row["tx_failed"]
-            agg["tx_refund"] += row["tx_refund"]
             agg["total_amount"] += row["total_amount"]
-            agg["refunded_amount"] += row["refunded_amount"]
             agg["bill_amount"] += row["bill_amount"]
-            agg["fee_revenue"] += row["fee_revenue"]
-            agg["bill_commission"] += row["bill_commission"]
-            agg["fx_spread_revenue"] += row["fx_spread_revenue"]
             agg["net_revenue"] += row["net_revenue"]
             agg["profit"] += row["profit"]
 
@@ -376,9 +503,3 @@ class Command(BaseCommand):
                     "net_revenue": self._money(agg["net_revenue"]),
                     "profit": self._money(agg["profit"]),
                 })
-
-    @staticmethod
-    def _money(val: Decimal) -> Decimal:
-        if not isinstance(val, Decimal):
-            val = Decimal(str(val))
-        return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

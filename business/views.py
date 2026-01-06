@@ -97,13 +97,62 @@ class DailyMetricsListView(ListAPIView):
     """
     List daily metrics with date range filtering (Scope 1.5.5).
     Filters: date, date_from, date_to
-    Example: /business/daily/?date_from=2025-10-01&date_to=2025-12-31
+    Example: /business/daily/?date=2025-10-15 or /business/daily/?date_from=2025-10-01&date_to=2025-12-31
+    
+    When a specific date is requested but no data exists, returns a zeroed-out metric object.
     """
     queryset = DailyBusinessMetrics.objects.all().order_by("-date")
     serializer_class = DailyBusinessMetricsSerializer
     permission_classes = [permissions.IsAdminUser]
     filter_backends = [DjangoFilterBackend]
     filterset_class = DailyMetricsFilter
+    
+    def list(self, request, *args, **kwargs):
+        # Check if a specific date is requested
+        date_param = _parse_date_param(request.query_params.get("date"))
+        
+        if date_param:
+            # Filter for specific date
+            queryset = self.get_queryset().filter(date=date_param)
+            if not queryset.exists():
+                # Return zeroed default metric for the date
+                zero_metric = {
+                    "id": None,
+                    "date": str(date_param),
+                    "new_users": 0,
+                    "total_users": 0,
+                    "active_users": 0,
+                    "active_users_7d": 0,
+                    "active_users_30d": 0,
+                    "total_transactions_success": 0,
+                    "total_transactions_failed": 0,
+                    "total_transactions_refunded": 0,
+                    "total_transferred_amount": "0.00",
+                    "total_refunded_amount": "0.00",
+                    "total_chargeback_amount": "0.00",
+                    "avg_transaction_value": "0.00",
+                    "fx_volume": "0.00",
+                    "bill_payments_count": 0,
+                    "bill_payments_failed": 0,
+                    "bill_payments_amount": "0.00",
+                    "fee_revenue": "0.00",
+                    "bill_commission_revenue": "0.00",
+                    "fx_spread_revenue": "0.00",
+                    "net_revenue": "0.00",
+                    "profit": "0.00",
+                    "failed_logins": 0,
+                    "incidents": 0,
+                    "metrics_by_region": {},
+                    "metrics_by_type": {},
+                    "metrics_by_currency": {},
+                    "ai_insight": None,
+                }
+                return Response([zero_metric])
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+        
+        # Default behavior - return filtered list
+        return super().list(request, *args, **kwargs)
 
 
 class DailyMetricsView(APIView):
@@ -151,11 +200,51 @@ class WeeklySummaryView(BasePaginatedView):
 class MonthlySummaryView(BasePaginatedView):
 
     def get(self, request):
-        month_param = _parse_date_param(request.query_params.get("month"))
+        month_param_raw = request.query_params.get("month")
+        month_param = None
+        
+        # Parse month parameter - supports both YYYY-MM and YYYY-MM-DD formats
+        if month_param_raw:
+            try:
+                if len(month_param_raw) == 7:  # YYYY-MM format
+                    from datetime import datetime
+                    month_param = datetime.strptime(month_param_raw + "-01", "%Y-%m-%d").date()
+                else:
+                    month_param = _parse_date_param(month_param_raw)
+                    if month_param:
+                        month_param = month_param.replace(day=1)
+            except ValueError:
+                month_param = None
+        
         dates = DailyBusinessMetrics.objects.values_list(
             "date", flat=True).order_by("-date")
+        
+        # If specific month requested but no data exists, return zeroed summary
+        if month_param:
+            month_dates = [d for d in dates if d.replace(day=1) == month_param]
+            if not month_dates:
+                zero_summary = {
+                    "month": str(month_param),
+                    "new_users": 0,
+                    "active_users": 0,
+                    "total_transactions_success": 0,
+                    "total_transactions_failed": 0,
+                    "total_transactions_refunded": 0,
+                    "total_transferred_amount": "0.00",
+                    "total_refunded_amount": "0.00",
+                    "bill_payments_amount": "0.00",
+                    "fee_revenue": "0.00",
+                    "bill_commission_revenue": "0.00",
+                    "fx_spread_revenue": "0.00",
+                    "fx_volume": "0.00",
+                    "net_revenue": "0.00",
+                    "profit": "0.00",
+                }
+                return Response([zero_summary])
+                
         if not dates:
             return Response([], status=status.HTTP_204_NO_CONTENT)
+            
         month_starts = []
         seen = set()
         for d in dates:
