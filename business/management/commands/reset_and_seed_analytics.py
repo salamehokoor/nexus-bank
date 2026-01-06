@@ -20,9 +20,10 @@ from business.models import (
 )
 
 class Command(BaseCommand):
-    help = "Reset analytics and seed REAL transaction history/metrics (Sep 2025 - Jan 2026)."
+    help = "Reset analytics and seed REAL transaction history/metrics (Jan 2026 - 7 days)."
 
-    START_DATE = date(2025, 9, 1)
+    # REDUCED: Date range shortened to just 7 days for minimal data and fast loading
+    START_DATE = date(2026, 1, 1)
     END_DATE = date(2026, 1, 7)
     
     # Target Biller Account (Requested by User)
@@ -91,7 +92,7 @@ class Command(BaseCommand):
         # Reset active users history for rolling windows
         self.active_users_history = []
         
-        self.stdout.write(f"Generating data for {total_days} days (High Volume Mode)...")
+        self.stdout.write(f"Generating data for {total_days} days (Optimized Volume Mode)...")
 
         processed_count = 0
         while current_date <= self.END_DATE:
@@ -163,9 +164,9 @@ class Command(BaseCommand):
         transactions = []
         bill_payments = []
         
-        # High Volume: 10-20 transactions per ACCOUNT
-        tx_per_account_min = 10
-        tx_per_account_max = 20
+        # REDUCED: 1-3 transactions per ACCOUNT (was 10-20) to minimize lag
+        tx_per_account_min = 1
+        tx_per_account_max = 3
         
         daily_tx_count = 0
         daily_tx_amount = Decimal("0.00")
